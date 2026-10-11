@@ -70,5 +70,7 @@ commit with `workflow_dispatch` (sha).
 Both repos use the org's `openp41ge-app-ci` GitHub App, installed on both
 (contents write, for the dispatch to app-tests; commit statuses write, for
 the status on app). Its client id is the `APP_CI_CLIENT_ID` variable and its
-private key the `APP_CI_PRIVATE_KEY` secret: org-level, shared with app and
-app-tests only.
+private key the `APP_CI_PRIVATE_KEY` secret. The org is on the Free plan,
+where org-level variables and secrets reach only public repos: app uses the
+org-level ones (shared with app and app-tests), and this private repo has its
+own repo-level copies.
