@@ -90,6 +90,17 @@ describe("renderer-log-transport", () => {
     expect(appendMock).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards an error entry's errorId", () => {
+    const entry = pushLog(LogLevel.ERROR, "test", "boot", ["failed"]);
+    installBridge();
+
+    initRendererLogTransport();
+
+    const batch = appendMock.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(batch[0]?.errorId).toBe(entry?.errorId);
+    expect(typeof batch[0]?.errorId).toBe("string");
+  });
+
   it("omits winId when it cannot be resolved", () => {
     vi.useFakeTimers();
     installBridge(null); // getWindowId returns null

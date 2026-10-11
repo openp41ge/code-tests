@@ -1529,3 +1529,81 @@ describe("log row detail interaction", () => {
     await destroyViewer(el);
   });
 });
+
+describe("revealError", () => {
+  const mk = (message: string, errorId?: string) => ({
+    timestamp: Date.now(),
+    level: errorId ? LogLevel.ERROR : LogLevel.INFO,
+    levelLabel: errorId ? "ERROR" : "INFO",
+    system: "test",
+    source: "mod",
+    message,
+    process: "main",
+    ...(errorId ? { errorId } : {}),
+  });
+  const page = (entries: unknown[], more: Record<string, unknown> = {}) => ({
+    entries,
+    hasOlder: false,
+    cursor: null,
+    ...more,
+  });
+
+  /** A viewer over a reader whose `loadOlder(cursor)` serves `pages[cursor]`. */
+  function mountPages(
+    latest: Record<string, unknown>,
+    pages: Record<string, Record<string, unknown>>,
+  ): Openp41geLogViewer {
+    const el = document.createElement("openp41ge-log-viewer") as Openp41geLogViewer;
+    el.pageReader = {
+      loadLatest: async () => latest,
+      loadOlder: async (cursor: unknown) => pages[String(cursor)],
+      subscribe: () => () => {},
+    } as never;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function clicks(el: Openp41geLogViewer): Array<{ message: string }> {
+    const seen: Array<{ message: string }> = [];
+    el.addEventListener("log-row-click", (e) =>
+      seen.push((e as CustomEvent<{ entry: { message: string } }>).detail.entry),
+    );
+    return seen;
+  }
+
+  it("reveals an entry in the loaded page and opens its detail", async () => {
+    const el = mountPages(page([mk("a"), mk("boom", "e-1"), mk("b")]), {});
+    const opened = clicks(el);
+
+    const found = await el.revealError("e-1");
+
+    expect(found?.message).toBe("boom");
+    expect(opened.map((e) => e.message)).toEqual(["boom"]);
+    await el.updateComplete;
+    expect(el.querySelector(".log-entry.revealed")?.textContent).toContain("boom");
+    el.remove();
+  });
+
+  it("pages older (within the day, then across days) until it finds the entry", async () => {
+    const el = mountPages(page([mk("newest")], { hasOlder: true, cursor: "p1" }), {
+      p1: page([mk("older")], { nextDayCursor: "d1", nextDayLabel: "Load yesterday" }),
+      d1: page([mk("yesterday boom", "e-2"), mk("yesterday")]),
+    });
+
+    const found = await el.revealError("e-2");
+
+    expect(found?.message).toBe("yesterday boom");
+    el.remove();
+  });
+
+  it("returns null and opens nothing when no page has the entry", async () => {
+    const el = mountPages(page([mk("a")], { hasOlder: true, cursor: "p1" }), {
+      p1: page([mk("b")]),
+    });
+    const opened = clicks(el);
+
+    expect(await el.revealError("missing")).toBeNull();
+    expect(opened).toEqual([]);
+    el.remove();
+  });
+});

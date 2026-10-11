@@ -118,6 +118,14 @@ describe("createLogger()", () => {
     spies.forEach((s) => s.mockRestore());
   });
 
+  it("error() returns the logged entry's errorId", () => {
+    const log = createLogger("test", "errors");
+    const id = log.error("it broke");
+    const entry = getLogBuffer().at(-1);
+    expect(typeof id).toBe("string");
+    expect(entry?.errorId).toBe(id);
+  });
+
   it("detaches a structured data payload from the trailing plain object", () => {
     const log = createLogger("test", "drag");
     const spy = vi.spyOn(console, "debug").mockImplementation(() => {});
@@ -177,6 +185,10 @@ describe("createNoopLogger()", () => {
 
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+
+  it("error() returns no id (nothing was logged)", () => {
+    expect(createNoopLogger().error("w")).toBeUndefined();
   });
 
   it("does not write to the log buffer", () => {

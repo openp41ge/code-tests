@@ -55,6 +55,18 @@ describe("LogFilePageReader", () => {
     expect(res.entries[0].level).toBe(LogLevel.INFO);
   });
 
+  it("keeps an entry's errorId", async () => {
+    (window as any).openp41ge.logs.readBackward = vi.fn().mockResolvedValue({
+      entries: [{ ...ENTRY, level: 3, levelLabel: "ERROR", errorId: "e-1" }],
+      hasOlder: false,
+      cursor: null,
+    });
+
+    const res = await new LogFilePageReader().loadLatest();
+
+    expect(res.entries[0]?.errorId).toBe("e-1");
+  });
+
   it("loadOlder forwards the cursor", async () => {
     const readBackward = vi.fn().mockResolvedValue({
       entries: [ENTRY],

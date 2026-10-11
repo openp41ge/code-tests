@@ -97,6 +97,17 @@ describe("pushLog()", () => {
     expect(["main", "renderer"]).toContain(entry.process);
   });
 
+  it("gives an ERROR entry a unique errorId, and other levels none", () => {
+    const a = pushLog(LogLevel.ERROR, "test", "m", ["first failure"]);
+    const b = pushLog(LogLevel.ERROR, "test", "m", ["second failure"]);
+    const warn = pushLog(LogLevel.WARN, "test", "m", ["just a warning"]);
+
+    expect(typeof a?.errorId).toBe("string");
+    expect(a?.errorId).toMatch(/^[a-z0-9-]{8,}$/);
+    expect(b?.errorId).not.toBe(a?.errorId);
+    expect(warn).not.toHaveProperty("errorId");
+  });
+
   it("accepts a plain string message", () => {
     pushLog(LogLevel.INFO, "test", "str-module", "a plain string");
     const entry = getLogBuffer()[0];

@@ -384,3 +384,46 @@ describe("LogFileStore.readLogsBackward", () => {
     expect(liveText).toContain('"beta"');
   });
 });
+
+describe("LogFileStore error ids", () => {
+  test("persists an entry's errorId and reads it back", () => {
+    store.append(makeEntry({ level: LogLevel.ERROR, message: "boom", errorId: "abc-123" }));
+    const line = JSON.parse(
+      fs.readFileSync(path.join(logsDir(), "openp41ge.log"), "utf-8").trim(),
+    ) as Record<string, unknown>;
+    expect(line.errorId).toBe("abc-123");
+    expect(store.readLogsBackward(null, 10).entries[0]?.errorId).toBe("abc-123");
+  });
+
+  test("findError returns the entry with that errorId, or null", () => {
+    store.append(makeEntry({ message: "before" }));
+    store.append(
+      makeEntry({ level: LogLevel.ERROR, system: "ext-a", message: "boom", errorId: "e-1" }),
+    );
+    store.append(makeEntry({ message: "after" }));
+
+    const found = store.findError("e-1");
+    expect(found?.message).toBe("boom");
+    expect(found?.system).toBe("ext-a");
+    expect(found?.errorId).toBe("e-1");
+    expect(store.findError("missing")).toBeNull();
+  });
+
+  test("findError searches older daily files too", () => {
+    fs.mkdirSync(logsDir(), { recursive: true });
+    fs.writeFileSync(
+      path.join(logsDir(), "openp41ge-2026-01-01.log"),
+      JSON.stringify({
+        timestamp: 1,
+        level: "ERROR",
+        system: "old",
+        source: "s",
+        message: "old boom",
+        process: "main",
+        errorId: "e-old",
+      }) + "\n",
+    );
+    store.append(makeEntry({ message: "today" }));
+    expect(store.findError("e-old")?.message).toBe("old boom");
+  });
+});

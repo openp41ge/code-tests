@@ -504,6 +504,61 @@ describe("AgentsChat (custom element)", () => {
     expect(messages[0].content).toBe("Hello world");
   });
 
+  it("appendError ends the reply with an error block whose link asks to open the log", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const opened: unknown[] = [];
+    el.addEventListener("chat:open-log", (e) => opened.push((e as CustomEvent).detail));
+
+    el.appendDelta("Partial");
+    el.appendError("e-1");
+    await el.updateComplete;
+
+    const messages = el.messages as Array<{ role: string; content?: string; segments?: unknown[] }>;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("Partial");
+    expect(messages[0].segments?.at(-1)).toEqual({ type: "error", errorId: "e-1" });
+
+    const block = el.shadowRoot!.querySelector('[data-testid="chat-error"]') as HTMLElement;
+    expect(block).toBeTruthy();
+    expect(block.textContent).toContain("Something went wrong");
+    expect(block.textContent).not.toContain("e-1");
+    (block.querySelector('[data-testid="chat-error-log"]') as HTMLElement).click();
+    expect(opened).toEqual([{ errorId: "e-1" }]);
+  });
+
+  it("an error with no log id shows the block without a link", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.appendError(undefined);
+    await el.updateComplete;
+
+    const block = el.shadowRoot!.querySelector('[data-testid="chat-error"]');
+    expect(block).toBeTruthy();
+    expect(block!.querySelector('[data-testid="chat-error-log"]')).toBeNull();
+  });
+
+  it("renders a stored error segment from a loaded chat", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setChat({
+      id: "c",
+      title: "t",
+      messages: [
+        { id: "u", role: "user", content: "hi", timestamp: 0 },
+        { id: "a", role: "assistant", segments: [{ type: "error", errorId: "e-2" }], timestamp: 0 },
+      ],
+    } as never);
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('[data-testid="chat-error-log"]')).toBeTruthy();
+  });
+
   it("stops auto-scrolling the moment the user scrolls up (even slowly)", async () => {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);

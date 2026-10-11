@@ -21,6 +21,7 @@ import type {
   ChatStreamRequest,
 } from "@openp41ge-extension-agents/backend/chat-provider";
 import type { AgentTool } from "@openp41ge-extension-agents/backend/tool";
+import { useLog } from "@openp41ge-extension-agents/backend/log";
 
 function makeFakeProvider(script: Array<Array<ProviderDelta>>): ChatProvider {
   let call = 0;
@@ -82,6 +83,60 @@ describe("AgentRuntime", () => {
 
     // Chat changed broadcast includes the final state.
     expect(ctx.hooks.broadcast).toHaveBeenCalledWith("chat:changed", {});
+  });
+
+  it("records a provider error as an error segment (not text) and pushes chat:error", async () => {
+    const provider = makeFakeProvider([
+      [
+        { type: "text", text: "Partial" },
+        { type: "error", errorId: "e-1" },
+      ],
+    ]);
+    ctx.providers.register({ id: "fake", label: "Fake", create: () => provider });
+
+    const chat = ctx.store.create("ws", { providerId: "fake" });
+    await ctx.runtime.send(chat.id, "win-a", "hi");
+
+    const reply = ctx.store.get(chat.id)!.messages[1];
+    expect(reply.content).toBe("Partial");
+    expect(reply.segments).toEqual([
+      { type: "text", text: "Partial" },
+      { type: "error", errorId: "e-1" },
+    ]);
+    expect(ctx.hooks.sendToWindow).toHaveBeenCalledWith("win-a", "chat:error", {
+      chatId: chat.id,
+      errorId: "e-1",
+    });
+  });
+
+  it("records an unexpected failure as an error segment with its log id, live", async () => {
+    const SILENT = { debug() {}, info() {}, warn() {}, error: () => undefined };
+    useLog({ ...SILENT, error: () => "e-9" });
+    try {
+      const provider: ChatProvider = {
+        id: "fake",
+        label: "Fake",
+        ping: async () => true,
+        async *streamChat(): AsyncIterable<ProviderDelta> {
+          throw new Error("kaput");
+        },
+      };
+      ctx.providers.register({ id: "fake", label: "Fake", create: () => provider });
+
+      const chat = ctx.store.create("ws", { providerId: "fake" });
+      await ctx.runtime.send(chat.id, "win-a", "hi");
+
+      const reply = ctx.store.get(chat.id)!.messages[1];
+      expect(reply.role).toBe("assistant");
+      expect(reply.content ?? "").toBe("");
+      expect(reply.segments).toEqual([{ type: "error", errorId: "e-9" }]);
+      expect(ctx.hooks.sendToWindow).toHaveBeenCalledWith("win-a", "chat:error", {
+        chatId: chat.id,
+        errorId: "e-9",
+      });
+    } finally {
+      useLog(SILENT);
+    }
   });
 
   it("persists token usage on the assistant message and forwards a chat:usage event", async () => {

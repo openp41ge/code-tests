@@ -13,6 +13,9 @@ import {
   toOpenAIMessages,
 } from "@openp41ge-extension-agents/backend/vllm-chat-provider";
 import type { ChatMessage } from "@openp41ge-extension-agents/chat/types";
+import { useLog } from "@openp41ge-extension-agents/backend/log";
+
+const SILENT_LOG = { debug() {}, info() {}, warn() {}, error: () => undefined };
 
 const config = { baseUrl: "http://localhost:8000/v1", defaultModel: "qwen" };
 
@@ -59,12 +62,37 @@ describe("toOpenAIMessages", () => {
   });
 });
 
+describe("toOpenAIMessages — errors", () => {
+  it("never sends an error to the model", () => {
+    const messages: ChatMessage[] = [
+      { id: "u", role: "user", content: "hi", timestamp: 0 },
+      // A turn that failed before any text: nothing to send.
+      { id: "a1", role: "assistant", segments: [{ type: "error", errorId: "e-1" }], timestamp: 0 },
+      { id: "u2", role: "user", content: "again", timestamp: 0 },
+      // A turn that failed partway: only its text is sent.
+      {
+        id: "a2",
+        role: "assistant",
+        content: "Partial",
+        segments: [{ type: "text", text: "Partial" }, { type: "error", errorId: "e-2" }],
+        timestamp: 0,
+      },
+    ];
+    expect(toOpenAIMessages(messages)).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "again" },
+      { role: "assistant", content: "Partial" },
+    ]);
+  });
+});
+
 describe("VllmChatProvider.streamChat", () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
   });
   afterEach(() => {
     vi.restoreAllMocks();
+    useLog(SILENT_LOG);
   });
 
   it("parses SSE into text + accumulated tool-call deltas", async () => {
@@ -256,7 +284,9 @@ describe("VllmChatProvider.streamChat", () => {
     expect(body.reasoning_effort).toBeUndefined();
   });
 
-  it("names the cause of a failed request in the provider error", async () => {
+  it("reports a failed request as an error delta carrying the logged error's id", async () => {
+    const errors: unknown[][] = [];
+    useLog({ ...SILENT_LOG, error: (...args: unknown[]) => (errors.push(args), "e-1") });
     const cause = Object.assign(new Error("connect EHOSTUNREACH"), {
       code: "EHOSTUNREACH",
       address: "192.168.1.238",
@@ -268,8 +298,42 @@ describe("VllmChatProvider.streamChat", () => {
     const provider = new VllmChatProvider(config);
 
     const out = await collect(provider.streamChat({ messages: [] }));
-    expect(out).toEqual([
-      { type: "text", text: "[provider error: fetch failed (EHOSTUNREACH 192.168.1.238:8000)]" },
-    ]);
+
+    expect(out).toEqual([{ type: "error", errorId: "e-1" }]);
+    // The log entry names the cause.
+    expect(errors[0].join(" ")).toContain("fetch failed (EHOSTUNREACH 192.168.1.238:8000)");
+  });
+
+  it("reports an error HTTP status as an error delta", async () => {
+    useLog({ ...SILENT_LOG, error: () => "e-2" });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response("bad model", { status: 400 }),
+    );
+    const out = await collect(new VllmChatProvider(config).streamChat({ messages: [] }));
+    expect(out).toEqual([{ type: "error", errorId: "e-2" }]);
+  });
+
+  it("reports a stream that fails partway as an error delta after what arrived", async () => {
+    useLog({ ...SILENT_LOG, error: () => "e-3" });
+    // The first read delivers a chunk; the second fails.
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        reads += 1;
+        if (reads === 1) {
+          c.enqueue(
+            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n'),
+          );
+        } else {
+          c.error(new Error("socket hang up"));
+        }
+      },
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response(body, { status: 200 }),
+    );
+    const out = await collect(new VllmChatProvider(config).streamChat({ messages: [] }));
+    expect(out).toContainEqual({ type: "text", text: "Hel" });
+    expect(out.at(-1)).toEqual({ type: "error", errorId: "e-3" });
   });
 });

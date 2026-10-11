@@ -1149,3 +1149,100 @@ describe("log detail drawer", () => {
     el.remove();
   });
 });
+
+describe("opening an error (revealError)", () => {
+  const BOOM = {
+    timestamp: 5,
+    level: 3,
+    levelLabel: "ERROR",
+    system: "ext-a",
+    source: "ext-a",
+    message: "[provider] boom\n    at fn (a.js:1:2)",
+    process: "main",
+    errorId: "e-1",
+  };
+  let revealListener: ((errorId: string) => void) | null = null;
+
+  function installLogs(launchErrorId: string | null = null): void {
+    revealListener = null;
+    (window as unknown as { openp41ge: unknown }).openp41ge = {
+      logs: {
+        getPath: vi.fn().mockResolvedValue({
+          logsDir: "/logs",
+          capabilities: { readBackward: true },
+        }),
+        readBackward: vi.fn().mockResolvedValue({
+          entries: [{ ...BOOM, level: 1, levelLabel: "INFO", message: "x", errorId: undefined }, BOOM],
+          hasOlder: false,
+          cursor: null,
+        }),
+        findError: vi.fn(async (id: string) => (id === "e-1" ? BOOM : null)),
+        getLaunchErrorId: () => launchErrorId,
+        onRevealError: (cb: (errorId: string) => void) => {
+          revealListener = cb;
+          return () => {
+            revealListener = null;
+          };
+        },
+      },
+    };
+  }
+
+  afterEach(() => {
+    delete (window as unknown as { openp41ge?: unknown }).openp41ge;
+    document.body.innerHTML = "";
+  });
+
+  function drawers(el: Lw): Array<{ detail: Record<string, unknown> }> {
+    return (el as unknown as { _drawers: Array<{ detail: Record<string, unknown> }> })._drawers;
+  }
+
+  function systems(el: Lw): string[] {
+    return (el as unknown as { _tabs: Array<{ system: string }> })._tabs.map((t) => t.system);
+  }
+
+  async function mounted(): Promise<Lw> {
+    registerLogStream("openp41ge", "core");
+    const el = make();
+    document.body.appendChild(el as unknown as HTMLElement);
+    await el.updateComplete;
+    return el;
+  }
+
+  it("opens the error's stream with its detail drawer", async () => {
+    installLogs();
+    const el = await mounted();
+
+    expect(await (el as unknown as Openp41geLogsWindow).revealError("e-1")).toBe(true);
+
+    expect(systems(el)).toContain("ext-a");
+    expect(drawers(el)).toHaveLength(1);
+    expect(drawers(el)[0].detail.message).toBe("[provider] boom");
+    expect(drawers(el)[0].detail.stack).toContain("at fn (a.js:1:2)");
+  });
+
+  it("returns false and opens nothing for an unknown error", async () => {
+    installLogs();
+    const el = await mounted();
+
+    expect(await (el as unknown as Openp41geLogsWindow).revealError("nope")).toBe(false);
+    expect(drawers(el)).toHaveLength(0);
+  });
+
+  it("opens the error the window was launched for", async () => {
+    installLogs("e-1");
+    const el = await mounted();
+
+    await vi.waitFor(() => expect(drawers(el)).toHaveLength(1));
+    expect(drawers(el)[0].detail.message).toBe("[provider] boom");
+  });
+
+  it("opens an error sent to the already-open window", async () => {
+    installLogs();
+    const el = await mounted();
+
+    revealListener?.("e-1");
+
+    await vi.waitFor(() => expect(drawers(el)).toHaveLength(1));
+  });
+});

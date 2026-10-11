@@ -43,6 +43,7 @@ function host(params: Record<string, unknown> = { chatId: "c1" }): ChatPaneHost 
       openEditor: vi.fn(),
     },
     log: { debug() {}, info() {}, warn() {}, error: vi.fn() },
+    openLog: vi.fn(),
   };
 }
 
@@ -57,6 +58,7 @@ function element(): ChatElement & Record<string, ReturnType<typeof vi.fn>> {
     setProviderStatus: vi.fn(),
     setUsage: vi.fn(),
     setStreamRate: vi.fn(),
+    appendError: vi.fn(),
     setTitle: vi.fn(),
     setComposerContext: vi.fn(),
   } as unknown as ChatElement & Record<string, ReturnType<typeof vi.fn>>;
@@ -139,6 +141,21 @@ describe("ChatPane", () => {
     expect(el.setProviderStatus).toHaveBeenCalledWith({ streaming: true });
     expect(el.setUsage).toHaveBeenCalledWith({ totalTokens: 3 });
     expect(el.setStreamRate).toHaveBeenCalledWith(12);
+  });
+
+  it("shows this chat's errors and opens an error's log", async () => {
+    const h = host();
+    const el = element();
+    const pane = new ChatPane(h, el);
+    pane.start();
+
+    push("error", { chatId: "other", errorId: "e-0" });
+    push("error", { chatId: "c1", errorId: "e-1" });
+    expect(el.appendError).toHaveBeenCalledTimes(1);
+    expect(el.appendError).toHaveBeenCalledWith("e-1");
+
+    pane.openLog("e-1");
+    expect(h.openLog).toHaveBeenCalledWith("e-1");
   });
 
   it("gives the composer the configured providers and the enabled tools", async () => {

@@ -197,6 +197,23 @@ describe("createRendererSurfaceDeps", () => {
   });
 });
 
+describe("createRendererSurfaceDeps — openLog", () => {
+  it("opens the Logs window on the error", () => {
+    const openLogsWindow = vi.fn();
+    const prev = (window as unknown as { openp41ge?: unknown }).openp41ge;
+    (window as unknown as { openp41ge: unknown }).openp41ge = {
+      ...(prev as object),
+      windowManager: { openLogsWindow },
+    };
+    try {
+      createRendererSurfaceDeps("ext-a", async () => ({})).openLog?.("e-1");
+      expect(openLogsWindow).toHaveBeenCalledWith({ errorId: "e-1" });
+    } finally {
+      (window as unknown as { openp41ge?: unknown }).openp41ge = prev;
+    }
+  });
+});
+
 describe("createRendererSurfaceDeps — tab key", () => {
   it("passes the tab's key, so an open tab for it is reused", () => {
     const deps = createRendererSurfaceDeps("openp41ge-extension-agents", async () => ({}));
