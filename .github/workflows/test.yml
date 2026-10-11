@@ -36,8 +36,8 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app
         with:
-          client-id: ${{ vars.CI_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.APP_CI_CLIENT_ID }}
+          private-key: ${{ secrets.APP_CI_PRIVATE_KEY }}
           owner: openp41ge
           repositories: app
           permission-statuses: write # report the result
