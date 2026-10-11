@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import { EventEmitter } from "events";
 import { createRequire } from "module";
 import path from "path";
-import { inApp } from "@app-tests/support";
+import { inApp } from "@code-tests/support";
 
 /** This test's directory in the app checkout (it reads app files). */
 const APP_HERE = inApp(__dirname);

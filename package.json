@@ -1,5 +1,5 @@
 {
-  "name": "openp41ge-app-tests",
+  "name": "openp41ge-code-tests",
   "private": true,
   "type": "module",
   "scripts": {

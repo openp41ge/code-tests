@@ -13,7 +13,7 @@ import path from "path";
 import { ExtensionHost } from "openp41ge-core-extension-host";
 import { createNoopLogger } from "openp41ge-core-logger";
 import { runExtensionGit } from "../../src/main/services/extension-git";
-import { inApp } from "@app-tests/support";
+import { inApp } from "@code-tests/support";
 
 /** This test's directory in the app checkout (it reads app files). */
 const APP_HERE = inApp(__dirname);

@@ -31,7 +31,7 @@ fetch("/.pi/skills/test-cross-window-drag/diagnostic.js")
   });
 ```
 
-Or open `file:///Users/rk/Repository/openp41ge/app/master/.pi/skills/test-cross-window-drag/diagnostic.js` and paste its contents.
+Or open `file:///Users/rk/Repository/openp41ge/code-tests/.pi/skills/test-cross-window-drag/diagnostic.js` and paste its contents.
 
 ## Architecture Overview
 

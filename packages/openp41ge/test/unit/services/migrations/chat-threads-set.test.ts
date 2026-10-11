@@ -11,7 +11,7 @@ import os from "os";
 import path from "path";
 import { parseInstructionSet } from "@openp41ge/main/services/migrations/instruction-set";
 import { runInstructionSet } from "@openp41ge/main/services/migrations/migration-runner";
-import { inApp } from "@app-tests/support";
+import { inApp } from "@code-tests/support";
 
 /** This test's directory in the app checkout (it reads app files). */
 const APP_HERE = inApp(__dirname);

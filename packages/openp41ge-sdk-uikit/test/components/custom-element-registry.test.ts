@@ -20,7 +20,7 @@ import { Openp41geIcon } from "../../src/components/openp41ge-icon";
 import { Openp41geInlineIcon } from "../../src/components/openp41ge-inline-icon";
 import { Openp41geToggle } from "../../src/components/openp41ge-toggle";
 import { DropLine } from "../../src/components/drop-indicator/drop-line";
-import { APP_DIR } from "@app-tests/support";
+import { APP_DIR } from "@code-tests/support";
 
 const uikitSrc = join(APP_DIR, "packages/openp41ge-sdk-uikit/src");
 

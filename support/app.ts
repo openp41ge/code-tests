@@ -1,5 +1,5 @@
 /**
- * app.ts — runs this repo's tests against an openp41ge/app checkout.
+ * app.ts — runs this repo's tests against an openp41ge/code checkout.
  *
  * The tests here mirror the app's layout (`packages/<pkg>/test/...`), and
  * were written to sit inside it. `appMirror` keeps them working from here:
@@ -14,7 +14,8 @@
  *   - relative and absolute ids: from this repo first (helpers, stubs,
  *     fixtures), then from the app (`../../src/...`).
  *
- * The app checkout is `APP_DIR`, or `../app/master` beside this repo.
+ * The app checkout is `APP_DIR`, else `../code/master` or `../app/master`
+ * beside this repo, whichever exists.
  */
 
 import fs from "node:fs";
@@ -30,11 +31,21 @@ export const TESTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const APP_DIR = resolveAppDir();
 
 function resolveAppDir(): string {
-  const dir = path.resolve(process.env.APP_DIR ?? path.join(TESTS_DIR, "../app/master"));
-  if (!fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-    throw new Error(`No openp41ge/app checkout at ${dir}. Set APP_DIR to one (see README.md).`);
+  const isCheckout = (dir: string) => fs.existsSync(path.join(dir, "pnpm-workspace.yaml"));
+  if (process.env.APP_DIR) {
+    const dir = path.resolve(process.env.APP_DIR);
+    if (!isCheckout(dir)) throw new Error(`No openp41ge/code checkout at APP_DIR (${dir}).`);
+    return dir;
   }
-  return dir;
+  const found = ["../code/master", "../app/master"]
+    .map((rel) => path.resolve(TESTS_DIR, rel))
+    .find(isCheckout);
+  if (!found) {
+    throw new Error(
+      "No openp41ge/code checkout beside this repo. Set APP_DIR to one (see README.md).",
+    );
+  }
+  return found;
 }
 
 /** Where `file` (in this repo) would sit in the app checkout. */
@@ -100,7 +111,7 @@ export function packageProject(configDir: string, config: ViteUserConfig): ViteU
     plugins: [appMirror(), ...(config.plugins ?? [])],
     resolve: {
       ...config.resolve,
-      alias: { "@app-tests/support": fileURLToPath(import.meta.url), ...config.resolve?.alias },
+      alias: { "@code-tests/support": fileURLToPath(import.meta.url), ...config.resolve?.alias },
     },
     // `?raw` imports (grammars, icons) read files in the app checkout.
     server: { ...config.server, fs: { allow: [TESTS_DIR, APP_DIR] } },

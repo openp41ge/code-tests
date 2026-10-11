@@ -13,7 +13,7 @@ import { ExtensionHost, discoverExtensions } from "openp41ge-core-extension-host
 import { createNoopLogger } from "openp41ge-core-logger";
 import { RUNTIME_SPECIFIERS } from "../../../vite.extension-runtime";
 import { bundleExtension, officialExtensionDirs } from "../../../scripts/bundle-extensions";
-import { inApp } from "@app-tests/support";
+import { inApp } from "@code-tests/support";
 
 /** This test's directory in the app checkout (it reads app files). */
 const APP_HERE = inApp(__dirname);

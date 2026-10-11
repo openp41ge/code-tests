@@ -9,7 +9,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { verifySignature } from "@openp41ge/main/services/migrations/signature";
-import { inApp } from "@app-tests/support";
+import { inApp } from "@code-tests/support";
 
 /** This test's directory in the app checkout (it reads app files). */
 const APP_HERE = inApp(__dirname);

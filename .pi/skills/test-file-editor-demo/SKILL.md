@@ -9,7 +9,7 @@ Skill for interactively testing the `demos/openp41ge-file-editor-demo` demo in t
 
 ## Prerequisites
 
-- app-tests sits beside an app checkout (`../app/master`, or `APP_DIR`), and `pnpm install` succeeds in both
+- code-tests sits beside a code checkout (`../code/master`, or `APP_DIR`), and `pnpm install` succeeds in both
 - TextMate WASM and grammar files are present in `src/tokenization/grammars/`
 
 ## Starting the Demo
