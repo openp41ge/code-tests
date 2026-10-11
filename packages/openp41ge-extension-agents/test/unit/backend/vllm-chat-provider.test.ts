@@ -255,4 +255,21 @@ describe("VllmChatProvider.streamChat", () => {
     body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
     expect(body.reasoning_effort).toBeUndefined();
   });
+
+  it("names the cause of a failed request in the provider error", async () => {
+    const cause = Object.assign(new Error("connect EHOSTUNREACH"), {
+      code: "EHOSTUNREACH",
+      address: "192.168.1.238",
+      port: 8000,
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new TypeError("fetch failed", { cause }),
+    );
+    const provider = new VllmChatProvider(config);
+
+    const out = await collect(provider.streamChat({ messages: [] }));
+    expect(out).toEqual([
+      { type: "text", text: "[provider error: fetch failed (EHOSTUNREACH 192.168.1.238:8000)]" },
+    ]);
+  });
 });
