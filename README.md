@@ -68,7 +68,7 @@ A test that reads app files by path uses `inApp(__dirname)` or `APP_DIR` from
 A push here tests code's current `master`; a maintainer can test any
 commit with `workflow_dispatch` (sha).
 
-Both repos use the org's `openp41ge-app-ci` GitHub App, installed on both
+Both repos use the org's `openp41ge-code-ci` GitHub App, installed on both
 (contents write, for the dispatch to code-tests; commit statuses write, for
 the status on code). Its client id is the `APP_CI_CLIENT_ID` variable and its
 private key the `APP_CI_PRIVATE_KEY` secret. The org is on the Free plan,
