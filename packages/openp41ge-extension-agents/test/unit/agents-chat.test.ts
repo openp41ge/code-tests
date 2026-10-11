@@ -1,0 +1,2266 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import "@openp41ge-extension-agents/chat/ui/agents-chat";
+import type { AgentsChat } from "@openp41ge-extension-agents/chat/ui/agents-chat";
+
+describe("AgentsChat (custom element)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("can be created via document.createElement", () => {
+    const el = document.createElement("agents-chat");
+    expect(el).toBeTruthy();
+  });
+
+  it("renders DOM structure when connected (with shadow DOM)", () => {
+    const el = document.createElement("agents-chat");
+    document.body.appendChild(el);
+
+    // Should have a shadow root
+    expect(el.shadowRoot).toBeTruthy();
+  });
+
+  it("shows token usage in the bottom bar once set", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const bar = el.shadowRoot!.querySelector(".chat-bottombar") as HTMLElement;
+    // The chat title is no longer shown in the bottom bar; it is replaced by a
+    // find-in-chat button (left-aligned).
+    expect(bar.querySelector(".bb-left")).toBeNull();
+    expect(bar.querySelector(".bb-find")).toBeTruthy();
+    expect(bar.textContent!.trim()).toBe("");
+
+    el.setUsage({ promptTokens: 1_200, completionTokens: 34, totalTokens: 1_234 });
+    await el.updateComplete;
+    const usage = el.shadowRoot!.querySelector(".composer-tokenrow") as HTMLElement;
+    expect(usage).toBeTruthy();
+    // Compact 1K formatting + direction arrows (down = rotated up icon).
+    // Two separate stat elements, each carrying its own tooltip.
+    const stats = usage.querySelectorAll(".bb-stat");
+    expect(stats).toHaveLength(2);
+    // Each stat is hovered/annotated via the shared tooltipContent directive.
+    expect(stats[0].textContent).toContain("1.2K");
+    expect(stats[1].textContent).toContain("34");
+    const arrows = usage.querySelectorAll(".bb-arrow");
+    expect(arrows).toHaveLength(2);
+    expect(arrows[0].classList.contains("down")).toBe(false);
+    expect(arrows[1].classList.contains("down")).toBe(true);
+    expect(usage.textContent).toContain("K");
+    expect(usage.textContent).not.toContain("total");
+    expect(usage.textContent).not.toContain("1,200");
+
+    // The live generation rate is right-aligned with a leading tilde and only
+    // visible while the response is streaming; hidden otherwise.
+    expect(bar.querySelector(".bb-tps")).toBeNull();
+
+    el.setProviderStatus({ streaming: true, providerOk: true });
+    el.setStreamRate(11.6);
+    await el.updateComplete;
+    let tps = bar.querySelector(".bb-tps") as HTMLElement | null;
+    expect(tps).toBeTruthy();
+    expect(tps!.textContent!.replace(/\s+/g, " ").trim()).toBe("~11.6 tok/s");
+
+    // Once streaming stops, the live readout disappears again.
+    el.setProviderStatus({ streaming: false, providerOk: true });
+    el.setStreamRate(11.6);
+    await el.updateComplete;
+    tps = bar.querySelector(".bb-tps") as HTMLElement | null;
+    expect(tps).toBeNull();
+  });
+
+  it("shortens large token counts to K/M", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setUsage({ promptTokens: 1_500_000, completionTokens: 2_300, totalTokens: 1_502_300 });
+    await el.updateComplete;
+    const usage = el.shadowRoot!.querySelector(".composer-tokenrow") as HTMLElement;
+    expect(usage.textContent).toContain("1.5M");
+    expect(usage.textContent).toContain("2.3K");
+    expect(usage.textContent).not.toContain("total");
+  });
+
+  it("shows no empty-state placeholder when there are no messages", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const messages = el.shadowRoot!.querySelector(".chat-messages");
+    expect(messages).toBeTruthy();
+    // The placeholder text was removed — the message container is empty until
+    // the first message is added.
+    expect(messages!.querySelector(".tool-empty")).toBeNull();
+    expect(messages!.querySelector(".chat-message")).toBeNull();
+  });
+
+  it("adds a user message", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello, world!");
+    const messages = el.messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
+    expect(messages[0].content).toBe("Hello, world!");
+  });
+
+  it("opens the find bar and searches across the transcript", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "hello world");
+    el.addMessage("assistant", "a world of code");
+    await el.updateComplete;
+
+    const bar = el.shadowRoot!.querySelector(".chat-bottombar") as HTMLElement;
+    const btn = bar.querySelector(".bb-find") as HTMLButtonElement;
+    btn.click();
+    await el.updateComplete;
+
+    const input = el.shadowRoot!.querySelector(".chat-findbar input") as HTMLInputElement;
+    expect(input).toBeTruthy();
+
+    input.value = "world";
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    // The find input is debounced (Node-side search is async), so wait for it.
+    await new Promise((r) => setTimeout(r, 200));
+    await el.updateComplete;
+
+    // Only the active occurrence is highlighted (one mark at a time), so huge
+    // transcripts never block the renderer; the running total is still shown.
+    const hits = el.shadowRoot!.querySelectorAll("mark.chat-hit");
+    expect(hits.length).toBe(1);
+    expect(hits[0].classList.contains("chat-hit-active")).toBe(true);
+    const count = el.shadowRoot!.querySelector(".chat-findbar .find-count") as HTMLElement;
+    expect(count.textContent!.trim()).toBe("1/2");
+
+    // Navigating moves the active highlight to the second hit.
+    const next = el.shadowRoot!.querySelectorAll(
+      ".chat-findbar .find-toggle",
+    )[1] as HTMLButtonElement;
+    next.click();
+    await el.updateComplete;
+    const active = el.shadowRoot!.querySelector("mark.chat-hit-active");
+    expect(active).toBeTruthy();
+    expect(el.shadowRoot!.querySelector(".chat-findbar .find-count")!.textContent!.trim()).toBe(
+      "2/2",
+    );
+
+    // Closing removes the marks and the bar (close is the last .find-toggle).
+    const toggles = el.shadowRoot!.querySelectorAll(".chat-findbar .find-toggle");
+    toggles[toggles.length - 1].click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".chat-findbar")).toBeNull();
+    expect(el.shadowRoot!.querySelectorAll("mark.chat-hit").length).toBe(0);
+  });
+
+  it("renders a user message as a bubble in the DOM", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello!");
+    await el.updateComplete;
+
+    const msgEls = el.shadowRoot!.querySelectorAll(".chat-message");
+    expect(msgEls).toHaveLength(1);
+    expect(msgEls[0].querySelector(".msg-content")!.textContent!.trim()).toBe("Hello!");
+    expect(msgEls[0].classList.contains("user")).toBe(true);
+  });
+
+  it("renders an assistant message inline with markdown in the DOM", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("assistant", "Hi **there**!");
+    await el.updateComplete;
+
+    const msgEls = el.shadowRoot!.querySelectorAll(".chat-message");
+    expect(msgEls).toHaveLength(1);
+    expect(msgEls[0].classList.contains("assistant")).toBe(true);
+    // Assistant responses are rendered as inline markdown, not a bubble.
+    expect(msgEls[0].querySelector(".msg-content strong")).not.toBeNull();
+  });
+
+  it("adds multiple messages", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello");
+    el.addMessage("assistant", "Hi");
+    el.addMessage("user", "How are you?");
+    await el.updateComplete;
+
+    expect(el.messages).toHaveLength(3);
+    expect(el.shadowRoot!.querySelectorAll(".chat-message")).toHaveLength(3);
+  });
+
+  it("shows only detected language matches and lets the user pick one", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("assistant", "```\nconst x = 1;\n```");
+    await el.updateComplete;
+
+    // Inferred block: badge shows the detected language full name.
+    const badge = el.shadowRoot!.querySelector(".code-lang") as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.textContent!.trim()).toBe("JavaScript");
+
+    // Open the picker; it should only list detected matches (not all languages).
+    badge.click();
+    await el.updateComplete;
+    const options = el.shadowRoot!.querySelectorAll(".code-lang-option");
+    expect(options.length).toBe(2);
+    expect(Array.from(options).map((o) => o.textContent!.trim())).toEqual([
+      "JavaScript",
+      "TypeScript",
+    ]);
+
+    // Pick TypeScript → the badge label updates and the picker closes.
+    const option = Array.from(options).find((o) => o.textContent!.trim() === "TypeScript")!;
+    option.click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".code-lang")!.textContent!.trim()).toBe("TypeScript");
+    expect(el.shadowRoot!.querySelector(".code-lang-menu")).toBeNull();
+  });
+
+  it("toggles line wrapping on a code block", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("assistant", "```js\nconst x = 1;\n```");
+    await el.updateComplete;
+
+    const block = el.shadowRoot!.querySelector(".code-block") as HTMLElement;
+    expect(block.classList.contains("wrap")).toBe(false);
+
+    const wrapBtn = el.shadowRoot!.querySelector(".code-wrap") as HTMLElement;
+    expect(wrapBtn).not.toBeNull();
+    wrapBtn.click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".code-block")!.classList.contains("wrap")).toBe(true);
+  });
+
+  it("boxes the toolbar buttons in a bordered group with a divider", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("assistant", "```js\nconst x = 1;\n```");
+    await el.updateComplete;
+
+    const group = el.shadowRoot!.querySelector(".code-block-toolbar-group") as HTMLElement;
+    expect(group).not.toBeNull();
+    // Both buttons live inside the framed group.
+    expect(group.querySelector(".code-wrap")).not.toBeNull();
+    expect(group.querySelector(".code-lang")).not.toBeNull();
+    // A separate 1px vertical divider sits between the wrap toggle and the
+    // language label (not a border on the wrap button).
+    expect(group.querySelector(".code-toolbar-sep")).not.toBeNull();
+  });
+
+  it("attaches horizontal overlay scrollbars to code blocks, but only while unwrapped", async () => {
+    // jsdom ships no ResizeObserver, and the component skips attaching without
+    // one. Stub it so the sync logic runs and we can assert the lifecycle.
+    const RealRO = globalThis.ResizeObserver as unknown;
+    // @ts-expect-error jsdom provides no ResizeObserver; install a no-op stub.
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      constructor(_cb: unknown) {}
+    };
+
+    try {
+      const el = document.createElement("agents-chat") as unknown as AgentsChat;
+      document.body.appendChild(el);
+      el.addMessage("assistant", "```js\nconst x = 1;\n```\n```python\nprint('a')\n```");
+      await el.updateComplete;
+
+      const codeBlocks = el.shadowRoot!.querySelectorAll<HTMLElement>(".code-block");
+      expect(codeBlocks.length).toBe(2);
+
+      const scrollbars = (el as unknown as { _codeScrollbars: Map<HTMLElement, unknown> })
+        ._codeScrollbars;
+      expect(scrollbars.size).toBe(2);
+
+      // Toggle wrap ON for the first block → its scrollbar is destroyed.
+      el.shadowRoot!.querySelectorAll<HTMLElement>(".code-wrap")[0].click();
+      await el.updateComplete;
+      expect(scrollbars.size).toBe(1);
+
+      // Toggle wrap back OFF → a scrollbar is re-attached.
+      el.shadowRoot!.querySelectorAll<HTMLElement>(".code-wrap")[0].click();
+      await el.updateComplete;
+      expect(scrollbars.size).toBe(2);
+    } finally {
+      globalThis.ResizeObserver = RealRO as typeof ResizeObserver;
+    }
+  });
+
+  it("clearMessages removes all messages and shows empty state", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello");
+    el.addMessage("assistant", "Hi");
+    el.clearMessages();
+
+    expect(el.messages).toHaveLength(0);
+
+    const shadow = el.shadowRoot!;
+    expect(shadow.querySelectorAll(".chat-message")).toHaveLength(0);
+  });
+
+  it("addMessage assigns a timestamp", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const before = Date.now();
+    el.addMessage("user", "Hello");
+    const after = Date.now();
+
+    expect(el.messages[0].timestamp).toBeGreaterThanOrEqual(before);
+    expect(el.messages[0].timestamp).toBeLessThanOrEqual(after);
+  });
+
+  it.skip("does not send empty messages", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const handler = vi.fn();
+    el.addEventListener("chat-message", handler);
+
+    // Simulate send with empty input
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "";
+    const sendBtn = el.shadowRoot!.querySelector(".chat-send-btn") as HTMLElement;
+    sendBtn.click();
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(el.messages).toHaveLength(0);
+  });
+
+  it.skip("dispatches chat-message event on send", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const handler = vi.fn();
+    el.addEventListener("chat-message", handler);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "Test message";
+    const sendBtn = el.shadowRoot!.querySelector(".chat-send-btn") as HTMLElement;
+    sendBtn.click();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "chat-message",
+        detail: { text: "Test message" },
+      }),
+    );
+  });
+
+  it.skip("sends on Enter key (without Shift)", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const handler = vi.fn();
+    el.addEventListener("chat-message", handler);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "Hello via Enter";
+
+    const event = new KeyboardEvent("keydown", { key: "Enter", shiftKey: false });
+    inputEl.dispatchEvent(event);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { text: "Hello via Enter" },
+      }),
+    );
+  });
+
+  it.skip("does not send on Shift+Enter", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const handler = vi.fn();
+    el.addEventListener("chat-message", handler);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "No send on Shift+Enter";
+
+    const event = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true });
+    inputEl.dispatchEvent(event);
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.skip("focusInput focuses the textarea", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    // Spy on the focus method since jsdom does not track shadow DOM activeElement
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    const focusSpy = vi.spyOn(inputEl, "focus");
+
+    el.focusInput();
+
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-build on re-connect", () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    const firstChildren = el.shadowRoot!.children.length;
+
+    // Simulate re-connect
+    el.connectedCallback();
+
+    expect(el.shadowRoot!.children.length).toBe(firstChildren);
+  });
+
+  it("registerAgentsChat is idempotent when called again", async () => {
+    const { registerAgentsChat } = await import("@openp41ge-extension-agents/chat/ui/agents-chat");
+    // Element is already registered by module import, so calling again
+    // exercises the else branch (element already exists)
+    expect(() => registerAgentsChat()).not.toThrow();
+    expect(customElements.get("agents-chat")).toBeTruthy();
+  });
+
+  // ── Controller imperative API (setChat / appendDelta / setToolCallState) ──
+
+  it("setChat renders the transcript and tool rows", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setChat({
+      id: "chat_1",
+      title: "Hello",
+      providerId: "vllm",
+      createdAt: 0,
+      updatedAt: 0,
+      messages: [
+        { id: "m1", role: "user", content: "hi", timestamp: 1 },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "hello",
+          toolCalls: [{ id: "tc1", name: "read_file", arguments: '{"path":"/a"}', status: "done" }],
+          segments: [
+            {
+              type: "tool",
+              toolCall: {
+                id: "tc1",
+                name: "read_file",
+                arguments: '{"path":"/a"}',
+                status: "done",
+              },
+            },
+            { type: "text", text: "hello" },
+          ],
+          timestamp: 2,
+        },
+      ],
+    });
+
+    await el.updateComplete;
+    const shadow = el.shadowRoot!;
+    expect(shadow.querySelectorAll(".chat-message.user")).toHaveLength(1);
+    expect(shadow.querySelectorAll(".chat-message.assistant")).toHaveLength(1);
+    const toolRow = shadow.querySelector(".tool-call-row") as HTMLElement;
+    expect(toolRow.textContent).toContain("read_file");
+    const toolJson = shadow.querySelector(".tool-call-json");
+    expect(toolJson?.textContent).toContain("/a");
+
+    // Tool calls render inline, interleaved with the response text per `segments`:
+    // the tool row comes before the streamed content (no grouped `.tool-calls` container).
+    const assistant = shadow.querySelector(".chat-message.assistant")!;
+    expect(assistant.querySelector(".tool-calls")).toBeNull();
+    const msgContent = assistant.querySelector(".msg-content")!;
+    expect(
+      toolRow.compareDocumentPosition(msgContent) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("appendDelta creates and grows the assistant message", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.appendDelta("Hello");
+    el.appendDelta(" world");
+
+    const messages = el.messages as Array<{ role: string; content?: string }>;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("assistant");
+    expect(messages[0].content).toBe("Hello world");
+  });
+
+  it("stops auto-scrolling the moment the user scrolls up (even slowly)", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const scroller = el.renderRoot.querySelector<HTMLElement>(".chat-messages")!;
+    // jsdom has no layout, so define real metrics on the scroller backed by a
+    // mutable value (bottom of a 2000px transcript in a 400px viewport = 1600).
+    Object.defineProperty(scroller, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(scroller, "clientHeight", { value: 400, configurable: true });
+    let top = 1600;
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+      },
+    });
+
+    // At the bottom (auto-follow engaged).
+    scroller.dispatchEvent(new Event("scroll"));
+    expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(true);
+
+    // Slowly scroll up just a couple of pixels — well within the "near bottom"
+    // band. Pinning must yield immediately, or the stream re-pins us here.
+    top = 1598;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(false);
+
+    // Stream new content: the viewport must NOT be yanked back to the bottom.
+    el.appendDelta("Let me check. ");
+    el.appendDelta("It says hello.");
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 25));
+    expect(scroller.scrollTop).toBe(1598);
+
+    // Scroll back to the bottom → following the stream resumes.
+    top = 1600;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(true);
+    el.appendDelta(" More. ");
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 25));
+    expect(scroller.scrollTop).toBe(2000);
+  });
+
+  it("unpins on a wheel-up gesture even before any scroll movement", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const scroller = el.renderRoot.querySelector<HTMLElement>(".chat-messages")!;
+    Object.defineProperty(scroller, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(scroller, "clientHeight", { value: 400, configurable: true });
+    let top = 1600;
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+      },
+    });
+
+    // Pinned at the bottom.
+    scroller.dispatchEvent(new Event("scroll"));
+    expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(true);
+
+    // A wheel-up gesture unpins immediately — the scroll event hasn't even
+    // fired yet, so an auto-anchor can't race ahead and re-pin us.
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -10 }));
+    expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(false);
+
+    // Streaming must not yank us back to the bottom.
+    el.appendDelta("Keep reading. ");
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 25));
+    expect(scroller.scrollTop).toBe(1600);
+  });
+
+  it("appendReasoning stores reasoning and renders a collapsible Reasoning block", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.appendReasoning("Let me think");
+    el.appendReasoning(" about this");
+    await el.updateComplete;
+
+    const messages = el.messages as Array<{ role: string; content?: string; reasoning?: string }>;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("assistant");
+    expect(messages[0].reasoning).toBe("Let me think about this");
+
+    const reasoning = el.renderRoot.querySelector(".msg-reasoning");
+    expect(reasoning).not.toBeNull();
+    // No template-literal whitespace leaks into the pre-wrap body: the
+    // pre-wrapped `.msg-content` starts flush at the top with no leading blank
+    // line or indent. (Assert on `.msg-content`, the pre-wrapped element —
+    // `white-space: normal` body container only holds the content.)
+    expect(reasoning!.querySelector(".msg-content")!.textContent).toBe("Let me think about this");
+    expect(reasoning!.querySelector(".msg-reasoning-size")!.textContent).toBe("~5 words");
+  });
+
+  it("parses reasoning as markdown (bold, lists, fenced code)", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    el.setChat({
+      messages: [
+        {
+          id: "r1",
+          role: "assistant",
+          reasoning:
+            "Let me **think hard** about this.\n\n- step one\n- step two\n\n```js\nconst x = 1;\n```",
+          content: "Done.",
+        },
+      ],
+    });
+    await el.updateComplete;
+    const reasoning = el.renderRoot.querySelector(".msg-reasoning");
+    expect(reasoning).not.toBeNull();
+    const body = reasoning!.querySelector(".msg-reasoning-body");
+    expect(body).not.toBeNull();
+    const content = body!.querySelector(".msg-content");
+    expect(content).not.toBeNull();
+    expect(content!.querySelector("strong")!.textContent).toBe("think hard");
+    expect(content!.querySelectorAll("ul li").length).toBe(2);
+    expect(content!.querySelector(".code-block-wrap pre code")!.textContent).toBe("const x = 1;");
+    el.remove();
+  });
+
+  it("keeps reasoning in the same message when it interleaves with content", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // A model that streams a first content token, then a reasoning fragment,
+    // then the rest of the content — all within ONE turn. These must stay on
+    // a single assistant message (reasoning block above the full answer).
+    el.appendDelta("Let");
+    el.appendReasoning(".");
+    el.appendDelta(" me confirm");
+    el.appendDelta(" the rest.");
+    await el.updateComplete;
+
+    const messages = el.messages as Array<{ role: string; content?: string; reasoning?: string }>;
+    const assistants = messages.filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].content).toBe("Let me confirm the rest.");
+    expect(assistants[0].reasoning).toBe(".");
+
+    // Exactly one reasoning block (not a split "word / reasoning / rest").
+    const blocks = el.renderRoot.querySelectorAll(".msg-reasoning");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.querySelector(".msg-reasoning-body")!.textContent!.trim()).toBe(".");
+  });
+
+  it("appendReasoning after a tool call starts a NEW assistant block, not merging into the old one", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Turn 1: reasoning, then a tool call (the tool card renders below the
+    // reasoning block).
+    el.appendReasoning("First turn reasoning");
+    el.setToolCallState({
+      id: "tc1",
+      name: "run_command",
+      arguments: '{"command":"ls"}',
+      status: "done",
+    });
+
+    // Turn 2: new reasoning must be its own sequential block, not merged into
+    // the previous message's reasoning that now sits above the tool card.
+    el.appendReasoning("Second turn reasoning");
+    await el.updateComplete;
+
+    const messages = el.messages as Array<{
+      role: string;
+      reasoning?: string;
+      toolCalls?: unknown[];
+    }>;
+    const assistants = messages.filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0].reasoning).toBe("First turn reasoning");
+    expect(assistants[0].toolCalls).toHaveLength(1);
+    expect(assistants[1].reasoning).toBe("Second turn reasoning");
+
+    // Two separate reasoning blocks render sequentially in the DOM.
+    const blocks = el.renderRoot.querySelectorAll(".msg-reasoning");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]!.querySelector(".msg-reasoning-body")!.textContent!.trim()).toBe(
+      "First turn reasoning",
+    );
+    expect(blocks[1]!.querySelector(".msg-reasoning-body")!.textContent!.trim()).toBe(
+      "Second turn reasoning",
+    );
+  });
+
+  it("setToolCallState adds a running tool call then transitions to done", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setToolCallState({
+      id: "tc1",
+      name: "run_command",
+      arguments: '{"command":"ls"}',
+      status: "running",
+    });
+    const running = (el.messages as Array<{ toolCalls?: Array<{ status: string }> }>)[0]
+      .toolCalls![0];
+    expect(running.status).toBe("running");
+
+    el.setToolCallState({
+      id: "tc1",
+      name: "run_command",
+      arguments: '{"command":"ls"}',
+      status: "done",
+    });
+    const done = (el.messages as Array<{ toolCalls?: Array<{ status: string }> }>)[0].toolCalls![0];
+    expect(done.status).toBe("done");
+  });
+
+  it("shows a success pill in the collapsible tool header", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setToolCallState(
+      { id: "tc1", name: "read_file", arguments: '{"path":"/a"}', status: "done" },
+      "file contents",
+    );
+    await el.updateComplete;
+
+    // No action buttons / status pill; the card is a collapsible details box
+    // with a frame. The header row carries chevron + Tool label + right-aligned
+    // name.
+    expect(el.shadowRoot!.querySelector(".tool-call-actions")).toBeNull();
+    expect(el.shadowRoot!.querySelector(".tool-call-result")).toBeNull();
+    expect(el.shadowRoot!.querySelector(".tool-call-status")).toBeNull();
+    const summary = el.shadowRoot!.querySelector(".tool-call-row")!;
+    expect(summary.querySelector(".tool-call-chevron")).not.toBeNull();
+    expect(summary.querySelector(".tool-call-label")?.textContent).toBe("Tool");
+    expect(summary.querySelector(".tool-call-name")?.textContent).toBe("read_file");
+    // The JSON body is hidden until the collapsible is opened.
+    const details = el.shadowRoot!.querySelector(".tool-call-details")! as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+  });
+
+  it("opens a tool call to reveal the JSON arguments", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setToolCallState({
+      id: "tc1",
+      name: "read_file",
+      arguments: '{"path":"/a"}',
+      status: "done",
+    });
+    await el.updateComplete;
+
+    const details = el.shadowRoot!.querySelector(".tool-call-details")! as HTMLDetailsElement;
+    const summary = details.querySelector(".tool-call-row") as HTMLElement;
+    expect(details.querySelector(".tool-call-body")).not.toBeNull();
+    expect(details.open).toBe(false);
+    summary.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(details.open).toBe(true);
+    expect(details.querySelector(".tool-call-json")?.textContent).toBe(
+      JSON.stringify({ path: "/a" }, null, 2),
+    );
+  });
+
+  it("groups consecutive tool calls into one box sharing dividers", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Legacy path (no segments): all tool calls group together.
+    el.setChat({
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          content: "ok",
+          toolCalls: [
+            { id: "tc1", name: "read_file", arguments: '{"path":"/a"}', status: "done" },
+            { id: "tc2", name: "grep", arguments: '{"pattern":"x"}', status: "done" },
+            { id: "tc3", name: "write_file", arguments: '{"path":"/b"}', status: "done" },
+          ],
+          timestamp: 1,
+        },
+      ],
+    });
+    await el.updateComplete;
+    const shadow = el.shadowRoot!;
+    expect(shadow.querySelectorAll(".tool-call-group")).toHaveLength(1);
+    expect(shadow.querySelectorAll(".tool-call-details")).toHaveLength(3);
+    // Two shared dividers between the three calls.
+    expect(shadow.querySelectorAll(".tool-call-details + .tool-call-details")).toHaveLength(2);
+    // No grouped `.tool-calls` container any more.
+    expect(shadow.querySelector(".tool-calls")).toBeNull();
+
+    // Consecutive tool segments group inline; a text segment breaks the group.
+    el.setChat({
+      messages: [
+        {
+          id: "m2",
+          role: "assistant",
+          content: "",
+          segments: [
+            { type: "tool", toolCall: { id: "t1", name: "a", arguments: "{}", status: "done" } },
+            { type: "tool", toolCall: { id: "t2", name: "b", arguments: "{}", status: "done" } },
+            { type: "text", text: "done." },
+            { type: "tool", toolCall: { id: "t3", name: "c", arguments: "{}", status: "done" } },
+          ],
+          timestamp: 2,
+        },
+      ],
+    });
+    await el.updateComplete;
+    const groups = shadow.querySelectorAll(".tool-call-group");
+    expect(groups).toHaveLength(2);
+    expect(groups[0].querySelectorAll(".tool-call-details")).toHaveLength(2);
+    expect(groups[1].querySelectorAll(".tool-call-details")).toHaveLength(1);
+    // Boundary between the two grouped calls has a shared divider with fades.
+    const divider = groups[0].querySelector(".tool-call-details + .tool-call-details")!;
+    expect(divider).not.toBeNull();
+  });
+
+  it("detaches an opened tool call from its group and spaces it apart", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setChat({
+      messages: [
+        {
+          id: "m1",
+          role: "assistant",
+          content: "",
+          segments: [
+            { type: "tool", toolCall: { id: "a", name: "read", arguments: "{}", status: "done" } },
+            { type: "tool", toolCall: { id: "b", name: "bash", arguments: "{}", status: "done" } },
+            { type: "tool", toolCall: { id: "c", name: "write", arguments: "{}", status: "done" } },
+            { type: "tool", toolCall: { id: "d", name: "bash", arguments: "{}", status: "done" } },
+          ],
+          timestamp: 1,
+        },
+      ],
+    });
+    await el.updateComplete;
+    const shadow = el.shadowRoot!;
+
+    // All closed: a single grouped box.
+    expect(shadow.querySelectorAll(".tool-call-group")).toHaveLength(1);
+    expect(
+      shadow.querySelector(".tool-call-group")!.querySelectorAll(".tool-call-details"),
+    ).toHaveLength(4);
+
+    // Open the 2nd call (b): it detaches into its own boxed card, while the
+    // remaining closed calls re-group so the first and last two still touch.
+    const second = shadow.querySelector<HTMLDetailsElement>(
+      '.tool-call-details[data-tool-call-id="b"]',
+    )!;
+    second.open = true;
+    second.dispatchEvent(new Event("toggle", { bubbles: false }));
+    await el.updateComplete;
+
+    const groups = [...shadow.querySelectorAll(".tool-call-group")];
+    expect(groups).toHaveLength(3);
+    expect(
+      [...groups[0].querySelectorAll(".tool-call-details")].map((d) => d.dataset.toolCallId),
+    ).toEqual(["a"]);
+    expect(
+      [...groups[1].querySelectorAll(".tool-call-details")].map((d) => d.dataset.toolCallId),
+    ).toEqual(["b"]);
+    expect(groups[1].querySelector(".tool-call-details")!.hasAttribute("open")).toBe(true);
+    expect(
+      [...groups[2].querySelectorAll(".tool-call-details")].map((d) => d.dataset.toolCallId),
+    ).toEqual(["c", "d"]);
+
+    // Closing it returns all four calls to one grouped box.
+    const re = shadow.querySelector<HTMLDetailsElement>(
+      '.tool-call-details[data-tool-call-id="b"]',
+    )!;
+    re.open = false;
+    re.dispatchEvent(new Event("toggle", { bubbles: false }));
+    await el.updateComplete;
+    expect(shadow.querySelectorAll(".tool-call-group")).toHaveLength(1);
+    expect(
+      shadow.querySelector(".tool-call-group")!.querySelectorAll(".tool-call-details"),
+    ).toHaveLength(4);
+
+    el.remove();
+  });
+
+  it("does not open a running (no-result) card", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setToolCallState({
+      id: "tc1",
+      name: "read_file",
+      arguments: '{"path":"/a"}',
+      status: "running",
+    });
+    await el.updateComplete;
+
+    // No action/status elements are shown; the card is a plain grouped box.
+    expect(el.shadowRoot!.querySelector(".tool-call-actions")).toBeNull();
+    expect(el.shadowRoot!.querySelector(".tool-call-status")).toBeNull();
+    expect(el.shadowRoot!.querySelector(".tool-call-result")).toBeNull();
+  });
+
+  it("pretty-prints tool call arguments as JSON in the body", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setToolCallState({
+      id: "tc1",
+      name: "read_file",
+      arguments: '{"path":"/repo/src/a.ts"}',
+      status: "running",
+    });
+    el.setToolCallState({
+      id: "tc2",
+      name: "search_files",
+      arguments: '{"query":"store","roots":["/x/ascii-drawing-tool/main","/x/tw050x.net/dev"]}',
+      status: "running",
+    });
+    el.setToolCallState({
+      id: "tc3",
+      name: "create_or_replace_file",
+      arguments: '{"path":"/repo/src/app.ts","content":"...full file body...","mode":"replace"}',
+      status: "running",
+    });
+    await el.updateComplete;
+
+    const jsons = el.shadowRoot!.querySelectorAll(".tool-call-json");
+    expect(jsons).toHaveLength(3);
+    expect(jsons[0].textContent).toBe(JSON.stringify({ path: "/repo/src/a.ts" }, null, 2));
+    expect(jsons[1].textContent).toBe(
+      JSON.stringify(
+        { query: "store", roots: ["/x/ascii-drawing-tool/main", "/x/tw050x.net/dev"] },
+        null,
+        2,
+      ),
+    );
+    // The full pretty-printed JSON (including any content) is shown verbatim.
+    expect(jsons[2].textContent).toBe(
+      JSON.stringify(
+        { path: "/repo/src/app.ts", content: "...full file body...", mode: "replace" },
+        null,
+        2,
+      ),
+    );
+  });
+
+  it("renders tool calls inline, interleaved with streamed text in order", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.appendDelta("Let me check. ");
+    el.setToolCallState({
+      id: "tc1",
+      name: "read_file",
+      arguments: '{"path":"/a"}',
+      status: "done",
+    });
+    el.appendDelta("It says hello.");
+    await el.updateComplete;
+
+    // Segment order is preserved: text → tool call → text.
+    const segments = (el.messages as Array<{ segments?: Array<{ type: string }> }>)[0].segments;
+    expect(segments?.map((s) => s.type)).toEqual(["text", "tool", "text"]);
+
+    const assistant = el.shadowRoot!.querySelector(".chat-message.assistant")!;
+    const contents = assistant.querySelectorAll(".msg-content");
+    const toolRow = assistant.querySelector(".tool-call-row")!;
+    expect(contents).toHaveLength(2);
+    expect(
+      contents[0].compareDocumentPosition(toolRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      toolRow.compareDocumentPosition(contents[1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("dispatches chat:send with the typed text", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const handler = vi.fn();
+    el.addEventListener("chat:send", handler as EventListener);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello agent";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    const sendBtn = el.shadowRoot!.querySelector(".composer-send") as HTMLElement;
+    sendBtn.click();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { text: "hello agent" } }),
+    );
+  });
+
+  it("renders typed text into the composer content and enables submit", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    expect((el.shadowRoot!.querySelector(".composer-send") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    (inputEl as { value: string }).value = "use `read_file` to inspect";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.textContent).toContain("use");
+    expect(content.querySelector("code")?.textContent).toBe("read_file");
+    expect((el.shadowRoot!.querySelector(".composer-send") as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("does not send when the composer is empty", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const handler = vi.fn();
+    el.addEventListener("chat:send", handler as EventListener);
+
+    (el.shadowRoot!.querySelector(".composer-send") as HTMLButtonElement).click();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("highlights the selected textarea range in the composer content", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "use `read_file` now";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Select the backticked token (raw range "`read_file`").
+    inputEl.setSelectionRange(4, 15);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const code = content.querySelector("code") as HTMLElement;
+    // The highlight wraps the whole code chip as a unit so it stays continuous.
+    const sel = content.querySelector(".composer-highlight") as HTMLElement;
+    expect(sel.textContent).toBe("read_file");
+    expect(sel.querySelector("code")).toBe(code);
+    expect(content.querySelectorAll(".composer-highlight")).toHaveLength(1);
+    expect(content.textContent).toContain("use");
+    expect(content.textContent).toContain("now");
+  });
+
+  it("splits a selection that crosses a code boundary into per-segment highlights", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "a `b` c";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Select from 'a ' into the code token: raw range "a `b`".
+    inputEl.setSelectionRange(0, 5);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const sel = Array.from(content.querySelectorAll(".composer-highlight")).map(
+      (m) => m.textContent,
+    );
+    expect(sel).toEqual(["a ", "b"]);
+  });
+
+  it("uses a span (not a styled mark) so the highlight never shifts layout", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "use `read_file` now";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    inputEl.setSelectionRange(4, 15);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    // The global <mark> rule adds padding/border/font that shifts the text;
+    // the highlight must be a plain <span> so layout stays stable.
+    expect(content.innerHTML).not.toContain("<mark");
+    expect(content.querySelectorAll("span.composer-highlight")).toHaveLength(1);
+  });
+
+  it("clears the highlight when the selection collapses to a caret", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    inputEl.setSelectionRange(0, 5);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelectorAll(".composer-highlight")).toHaveLength(1);
+
+    // Collapse back to a caret (e.g. clicking once).
+    inputEl.setSelectionRange(3, 3);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelectorAll(".composer-highlight")).toHaveLength(0);
+  });
+
+  it("tooltips the submit button when it is deactivated", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    const sendBtn = el.shadowRoot!.querySelector(".composer-send") as HTMLButtonElement;
+
+    // Deactivated (empty draft): a tooltip explains why the button is inert.
+    expect(sendBtn.disabled).toBe(true);
+    expect(sendBtn.getAttribute("title")).toBe("Type a message to send");
+
+    // Activate: the styled tooltip provides the label, so the native-title
+    // fallback is cleared (having both would double the tooltip).
+    (inputEl as { value: string }).value = "hello";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(sendBtn.disabled).toBe(false);
+    expect(sendBtn.getAttribute("title")).toBeNull();
+
+    // Clearing the draft deactivates it again.
+    (inputEl as { value: string }).value = "";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(sendBtn.disabled).toBe(true);
+    expect(sendBtn.getAttribute("title")).toBe("Type a message to send");
+  });
+
+  it("setComposerContext populates providers and active tools", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [
+        {
+          id: "vllm",
+          label: "vLLM",
+          defaultModel: "vicuna-13b",
+          baseUrl: "http://localhost:8000/v1",
+          models: [{ id: "vicuna-13b" }, { id: "llama-2", contextWindow: 128000 }],
+        },
+      ],
+      activeTools: ["read_file", "run_command"],
+    });
+    await el.updateComplete;
+
+    const providerBtn = el.shadowRoot!.querySelector(".composer-select") as HTMLButtonElement;
+    const modelBtn = el.shadowRoot!.querySelector(
+      ".composer-select.composer-model-select",
+    ) as HTMLButtonElement;
+    expect(providerBtn.querySelector(".composer-select-label")?.textContent).toContain("vLLM");
+    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("vicuna-13b");
+
+    // Clicking the provider selector opens a provider list over the text area.
+    providerBtn.click();
+    await el.updateComplete;
+    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
+    expect(items).toHaveLength(1);
+    // Two-row layout: name on the first row, base URL + model count on the second.
+    expect(items[0].querySelector(".row-name")?.textContent).toContain("vLLM");
+    expect(items[0].querySelector(".row-sub")?.textContent).toContain("http://localhost:8000/v1");
+    expect(items[0].querySelector(".row-sub")?.textContent).toContain("2 models");
+
+    // Clicking the model selector opens a model list for the active provider.
+    modelBtn.click();
+    await el.updateComplete;
+    const modelItems = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
+    expect(modelItems).toHaveLength(2);
+    expect(modelItems[0].textContent).toContain("vicuna-13b");
+
+    // The tools toggle is the only `.composer-tool` that carries an SVG icon
+    // (the add-content button is a text glyph), so select it via that.
+    const toolsBtn = el
+      .shadowRoot!.querySelector(".composer-tool svg")
+      ?.closest("button") as HTMLElement;
+    // The tools button shows no floating count badge.
+    expect(toolsBtn.querySelector(".tool-badge")).toBeNull();
+  });
+
+  it("selecting a provider dispatches chat:provider-change and closes the dropdown", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [
+        { id: "vllm", label: "vLLM", defaultModel: "vicuna-13b" },
+        { id: "openai", label: "OpenAI", defaultModel: "gpt-4" },
+      ],
+      activeProviderId: "vllm",
+    });
+    await el.updateComplete;
+
+    const providerBtn = el.shadowRoot!.querySelector(".composer-select") as HTMLButtonElement;
+    providerBtn.click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item")).toHaveLength(
+      2,
+    );
+
+    const handler = vi.fn();
+    el.addEventListener("chat:provider-change", handler as EventListener);
+
+    const other = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item")[1];
+    (other as HTMLElement).click();
+    await el.updateComplete;
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      providerId: "openai",
+      modelId: "gpt-4",
+    });
+    // The dropdown stays open (like the tools multi-select); it closes only
+    // when the user clicks outside the composer.
+    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
+    expect(providerBtn.querySelector(".composer-select-label")?.textContent).toContain("OpenAI");
+    // The selector buttons are plain buttons (no border/background by default).
+    expect(providerBtn.tagName).toBe("BUTTON");
+  });
+
+  it("hides the thinking selector and sends nothing when the model has no thinking entries", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [{ id: "vllm", label: "vLLM", defaultModel: "m1" }],
+      activeProviderId: "vllm",
+    });
+    await el.updateComplete;
+
+    // No thinking selector in the toolbar.
+    expect(el.shadowRoot!.querySelector(".composer-thinking-select")).toBeNull();
+
+    const handler = vi.fn();
+    el.addEventListener("chat:send", handler as EventListener);
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hi";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector(".composer-send") as HTMLElement).click();
+
+    // No thinkingLevel is sent.
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ text: "hi" });
+  });
+
+  it("shows only the model's thinking entries and keeps the menu open on select", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [
+        {
+          id: "vllm",
+          label: "vLLM",
+          defaultModel: "m1",
+          models: [{ id: "m1", thinking: { Light: "low", Deep: "high" }, contextWindow: 128000 }],
+        },
+      ],
+      activeProviderId: "vllm",
+    });
+    await el.updateComplete;
+
+    const thinkingBtn = el.shadowRoot!.querySelector(
+      ".composer-thinking-select",
+    ) as HTMLButtonElement;
+    expect(thinkingBtn).not.toBeNull();
+    // First entry is shown by default.
+    expect(thinkingBtn.querySelector(".composer-select-label")?.textContent).toBe("Light");
+
+    // Only the model's entries are listed.
+    thinkingBtn.click();
+    await el.updateComplete;
+    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain("Light");
+    expect(items[1].textContent).toContain("Deep");
+
+    const handler = vi.fn();
+    el.addEventListener("chat:thinking-change", handler as EventListener);
+    // Selecting an entry updates the button and keeps the menu open.
+    (items[1] as HTMLElement).click();
+    await el.updateComplete;
+    expect(handler).toHaveBeenCalledOnce();
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ thinkingKey: "Deep" });
+    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
+    expect(thinkingBtn.querySelector(".composer-select-label")?.textContent).toBe("Deep");
+
+    // Sending includes the selected entry's value.
+    const sendHandler = vi.fn();
+    el.addEventListener("chat:send", sendHandler as EventListener);
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hi";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector(".composer-send") as HTMLElement).click();
+    expect((sendHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      text: "hi",
+      thinkingLevel: "high",
+    });
+  });
+
+  it("omits thinkingLevel when the selected entry's value is null (off)", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [
+        {
+          id: "vllm",
+          label: "vLLM",
+          defaultModel: "m1",
+          models: [{ id: "m1", thinking: { Off: null, Low: "low" }, contextWindow: 128000 }],
+        },
+      ],
+      activeProviderId: "vllm",
+    });
+    await el.updateComplete;
+
+    const sendHandler = vi.fn();
+    el.addEventListener("chat:send", sendHandler as EventListener);
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hi";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector(".composer-send") as HTMLElement).click();
+    // The default entry ("Off", value null) must not emit a thinkingLevel.
+    expect((sendHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({ text: "hi" });
+  });
+
+  it("selecting a model dispatches chat:model-change and updates the model label", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      providers: [
+        {
+          id: "vllm",
+          label: "vLLM",
+          defaultModel: "vicuna-13b",
+          models: [{ id: "vicuna-13b" }, { id: "qwen-25" }],
+        },
+      ],
+      activeProviderId: "vllm",
+      activeModelId: "vicuna-13b",
+    });
+    await el.updateComplete;
+
+    const modelBtn = el.shadowRoot!.querySelector(
+      ".composer-select.composer-model-select",
+    ) as HTMLButtonElement;
+    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("vicuna-13b");
+
+    const handler = vi.fn();
+    el.addEventListener("chat:model-change", handler as EventListener);
+
+    modelBtn.click();
+    await el.updateComplete;
+    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
+    expect(items).toHaveLength(2);
+
+    (items[1] as HTMLElement).click();
+    await el.updateComplete;
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ modelId: "qwen-25" });
+    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("qwen-25");
+    // The model dropdown stays open (closes only on outside click).
+    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
+  });
+
+  it("tools multi-select lists all tools, toggles them, and keeps the menu open", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setComposerContext({
+      availableTools: [
+        { name: "read_file", description: "Read a file." },
+        { name: "search_files", description: "Search files." },
+        { name: "run_command", description: "Run a command." },
+      ],
+      activeTools: ["read_file", "run_command"],
+    });
+    await el.updateComplete;
+
+    // The tools toggle is the only `.composer-tool` that carries an SVG icon.
+    const toolsBtn = el
+      .shadowRoot!.querySelector(".composer-tool svg")
+      ?.closest("button") as HTMLButtonElement;
+    toolsBtn.click();
+    await el.updateComplete;
+
+    const items = el.shadowRoot!.querySelectorAll(".composer-tools-menu .tool-item");
+    expect(items).toHaveLength(3);
+    expect((items[0] as HTMLElement).classList.contains("active")).toBe(true);
+    expect((items[1] as HTMLElement).classList.contains("active")).toBe(false);
+    // Two-row layout: name row + description row, checkbox icon present.
+    expect(items[0].querySelector(".tool-name")?.textContent).toBe("read_file");
+    expect(items[0].querySelector(".tool-desc")?.textContent).toBe("Read a file.");
+    expect(items[0].querySelector(".tool-check svg")).toBeTruthy();
+    expect(items[1].querySelector(".tool-check svg")).toBeTruthy();
+
+    const handler = vi.fn();
+    el.addEventListener("chat:tools-change", handler as EventListener);
+
+    // Toggling the middle (disabled) tool enables it and leaves the menu open.
+    (items[1] as HTMLElement).click();
+    await el.updateComplete;
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      tools: ["read_file", "run_command", "search_files"],
+    });
+    expect(el.shadowRoot!.querySelector(".composer-tools-menu")).toBeTruthy();
+  });
+
+  it("sends on Enter (without Shift) and does not send on Shift+Enter", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const handler = vi.fn();
+    el.addEventListener("chat:send", handler as EventListener);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello";
+    inputEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: false }));
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    (inputEl as { value: string }).value = "again";
+    inputEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true }));
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("inserts a newline on Shift+Enter and keeps the caret after it", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const handler = vi.fn();
+    el.addEventListener("chat:send", handler as EventListener);
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "first line";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.setSelectionRange(10, 10);
+    await el.updateComplete;
+
+    inputEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true }));
+    await el.updateComplete;
+
+    expect(inputEl.value).toBe("first line\n");
+    expect(inputEl.selectionStart).toBe(11);
+    expect(inputEl.selectionEnd).toBe(11);
+    expect(handler).not.toHaveBeenCalled();
+    // The composer renders the newline as a line break and grows.
+    expect(el.shadowRoot!.querySelector(".composer-content")!.textContent).toBe("first line\n");
+  });
+
+  it("inserts a newline at the caret (not the end) on Shift+Enter", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    // Place the caret after "hello".
+    inputEl.setSelectionRange(5, 5);
+    await el.updateComplete;
+
+    inputEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true }));
+    await el.updateComplete;
+
+    expect(inputEl.value).toBe("hello\n world");
+    expect(inputEl.selectionStart).toBe(6);
+    expect(inputEl.selectionEnd).toBe(6);
+  });
+
+  it("moves the caret to the moving edge even when selectionDirection is 'none'", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world foo";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Anchor the caret at 6 (before "world") so the previous selection is 6,6.
+    inputEl.setSelectionRange(6, 6);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(6);
+
+    // Cmd+Shift+Right extends the selection to 11; the browser may leave
+    // direction as "none" (macOS word/line select).
+    inputEl.setSelectionRange(6, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "none";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+
+    // Cmd+Shift+Left extends backward to 4; caret must ride the leading edge.
+    inputEl.setSelectionRange(4, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "none";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    inputEl.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "ArrowLeft", shiftKey: true, metaKey: true }),
+    );
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(4);
+  });
+
+  it("re-anchors the caret to the top when Cmd+Shift+Up undoes Cmd+Shift+Down", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "aaa\nbbb\nccc";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Anchor the caret at 4 (start of "bbb") — previous selection is 4,4.
+    inputEl.setSelectionRange(4, 4);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Cmd+Shift+Down selects 4..end with the browser leaving direction "none";
+    // the caret rides the (moving) end at 11.
+    inputEl.setSelectionRange(4, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "none";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+
+    // Cmd+Shift+Up re-anchors to the top: 0..4, both endpoints moved. The caret
+    // must ride the leading edge (0) back to the top, not freeze at the anchor.
+    inputEl.setSelectionRange(0, 4);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "none";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+    expect(
+      el.shadowRoot!.querySelector(".composer-content")!.querySelector(".composer-highlight")
+        ?.textContent,
+    ).toBe("aaa\n");
+  });
+
+  it("returns the caret to the top when Cmd+Shift+Up re-anchors with a stale 'forward' direction", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "aaa\nbbb\nccc";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    inputEl.setSelectionRange(4, 4);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Cmd+Shift+Down selects 4..end; Chrome may leave direction "forward" here.
+    inputEl.setSelectionRange(4, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "forward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+
+    // Cmd+Shift+Up re-anchors to 0..4 but CHROME REPORTING direction "forward"
+    // (stale). The previous anchor (4) is still the fixed end, so the caret must
+    // ride the moving edge (0) back to the top.
+    inputEl.setSelectionRange(0, 4);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "forward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+    expect(
+      el.shadowRoot!.querySelector(".composer-content")!.querySelector(".composer-highlight")
+        ?.textContent,
+    ).toBe("aaa\n");
+  });
+
+  it("moves the caret on a boundary flip even though the endpoints do not change", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "aaa\nbbb\nccc";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Caret at the very top.
+    inputEl.setSelectionRange(0, 0);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Cmd+Shift+Down selects the whole document; caret rides the end.
+    inputEl.setSelectionRange(0, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "forward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+
+    // Cmd+Shift+Up flips the focus to the start even though (0,11) is unchanged.
+    // The caret must ride the start, not stay pinned to the (now-stale) anchor.
+    inputEl.setSelectionRange(0, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "backward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(11);
+
+    // Cmd+Shift+Down flips the focus back to the end.
+    inputEl.setSelectionRange(0, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "forward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+  });
+
+  const mountWithText = async (text: string) => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = text;
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+    return { el, inputEl };
+  };
+
+  const cmdArrow = (inputEl: HTMLTextAreaElement, key: string, shift: boolean) =>
+    inputEl.dispatchEvent(
+      new KeyboardEvent("keydown", { key, shiftKey: shift, metaKey: true, cancelable: true }),
+    );
+
+  it("Cmd+Shift+Up/Down extends from a fixed anchor and unselects on the way back", async () => {
+    // "aaa\nbbb\nccc" — the caret starts at 4 (start of "bbb").
+    const { el, inputEl } = await mountWithText("aaa\nbbb\nccc");
+    inputEl.setSelectionRange(4, 4);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Down: anchor stays at 4, the focus edge runs to the end.
+    cmdArrow(inputEl, "ArrowDown", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([4, 11]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+
+    // Up: the focus edge crosses the anchor — the old selection is dropped and
+    // the text above the anchor is selected instead (not re-extended downward).
+    cmdArrow(inputEl, "ArrowUp", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([0, 4]);
+    expect(inputEl.selectionDirection).toBe("backward");
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(4);
+
+    // Down again: back to the same selection below the anchor.
+    cmdArrow(inputEl, "ArrowDown", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([4, 11]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+  });
+
+  it("collapses the selection onto the anchor when Cmd+Shift+Arrow reverses onto it", async () => {
+    const { el, inputEl } = await mountWithText("aaa\nbbb\nccc");
+    // Caret at the very end: Cmd+Shift+Up selects the whole document.
+    inputEl.setSelectionRange(11, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    cmdArrow(inputEl, "ArrowUp", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([0, 11]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+
+    // Cmd+Shift+Down brings the focus edge back onto the anchor: the selection
+    // is fully unselected and the caret sits at the bottom again.
+    cmdArrow(inputEl, "ArrowDown", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([11, 11]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+    expect(el.shadowRoot!.querySelector(".composer-highlight")).toBeNull();
+  });
+
+  it("moves the caret with Cmd+Shift+Arrow even when there is nothing left to select", async () => {
+    const { el, inputEl } = await mountWithText("aaa\nbbb\nccc");
+    // Whole document selected downward from the top: the anchor is at 0.
+    inputEl.setSelectionRange(0, 0);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    inputEl.setSelectionRange(0, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+
+    // Nothing further to select upward, but the caret must still travel to the
+    // top (the selection collapses onto the anchor).
+    cmdArrow(inputEl, "ArrowUp", true);
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+
+    cmdArrow(inputEl, "ArrowDown", true);
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([0, 11]);
+  });
+
+  it("collapses to the destination on Cmd+Arrow without Shift", async () => {
+    const { el, inputEl } = await mountWithText("aaa\nbbb\nccc");
+    inputEl.setSelectionRange(4, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    cmdArrow(inputEl, "ArrowUp", false);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([0, 0]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(0);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(0);
+  });
+
+  it("Cmd+Shift+Left/Right selects to the line edges without crossing a newline", async () => {
+    const { el, inputEl } = await mountWithText("aaa\nbbbbb\nccc");
+    // Caret inside "bbbbb" (offset 6 = after the first "b").
+    inputEl.setSelectionRange(6, 6);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    cmdArrow(inputEl, "ArrowRight", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([6, 9]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(9);
+
+    // Back across the anchor to the start of the same line.
+    cmdArrow(inputEl, "ArrowLeft", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([4, 6]);
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(4);
+  });
+
+  it("keeps the anchor when a plain Shift+Arrow follows a Cmd+Shift+Arrow", async () => {
+    const { el, inputEl } = await mountWithText("hello world");
+    inputEl.setSelectionRange(6, 6);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Cmd+Shift+Left leaves an explicit "backward" direction, so the browser's
+    // own Shift+Right afterwards shrinks the selection from the leading edge.
+    cmdArrow(inputEl, "ArrowLeft", true);
+    await el.updateComplete;
+    expect([inputEl.selectionStart, inputEl.selectionEnd]).toEqual([0, 6]);
+    expect(inputEl.selectionDirection).toBe("backward");
+
+    inputEl.setSelectionRange(1, 6, "backward");
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(1);
+    expect((el as unknown as { _selAnchor: number })._selAnchor).toBe(6);
+  });
+
+  it("shows the thinking… tail while waiting for a reply and hides it once content streams", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // In-flight request, but no assistant text yet — still "waiting".
+    el.setProviderStatus({ streaming: true, providerOk: true });
+    el.addMessage("user", "hi");
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".chat-thinking")).not.toBeNull();
+
+    // First streamed token arrives — the indicator disappears.
+    el.appendDelta("Hello");
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".chat-thinking")).toBeNull();
+
+    // Streaming ends entirely — no indicator.
+    el.setProviderStatus({ streaming: false, providerOk: true });
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".chat-thinking")).toBeNull();
+  });
+
+  it("does not show the thinking… tail when an assistant reply is already complete", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.addMessage("assistant", "done");
+    el.setProviderStatus({ streaming: false, providerOk: true });
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".chat-thinking")).toBeNull();
+  });
+
+  it("setProviderStatus shows a status strip when unreachable", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    el.setProviderStatus({ streaming: false, providerOk: false, providerLabel: "vLLM" });
+    await el.updateComplete;
+    const status = el.shadowRoot!.querySelector(".chat-status") as HTMLElement;
+    expect(status).toBeTruthy();
+    expect(status.textContent).toContain("unreachable");
+  });
+
+  it("renders the caret as an overlay (not an inline span) at the caret offset", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Collapsed caret in the middle of the text.
+    inputEl.setSelectionRange(6, 6);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const caret = content.querySelector(".composer-caret") as HTMLElement;
+    expect(caret).toBeTruthy();
+    // The caret is an overlay element, so it never splits/shifts the text.
+    expect(content.textContent).toBe("hello world");
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(6);
+  });
+
+  it("syncs the highlight + caret when the text-area selection changes (Shift+Arrow)", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Select "world" (forward) and mirror the keyboard path (select + keyup).
+    inputEl.setSelectionRange(6, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "forward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    inputEl.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", shiftKey: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelector(".composer-highlight")?.textContent).toBe("world");
+    expect(content.querySelector(".composer-caret")).toBeTruthy();
+    // Forward selection: caret/focus rides the end of the highlight.
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(11);
+  });
+
+  it("places the caret on the leading edge (selectionStart) for a backward Shift+Arrow", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Anchor at 11, focus moves left to 4 (backward), highlight spans 4..11.
+    inputEl.setSelectionRange(4, 11);
+    (inputEl as unknown as { selectionDirection: string }).selectionDirection = "backward";
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelector(".composer-highlight")?.textContent).toBe("o world");
+    expect(content.querySelector(".composer-caret")).toBeTruthy();
+    // Backward selection: caret/focus rides the leading edge, not the end.
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(4);
+  });
+
+  it("collapses the selection (deselect) when an arrow key moves the caret", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    inputEl.setSelectionRange(6, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector(".composer-content")!.querySelector(".composer-highlight"),
+    ).toBeTruthy();
+
+    // Arrow without shift collapses to a caret (no highlight).
+    inputEl.setSelectionRange(11, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector(".composer-content")!.querySelector(".composer-highlight"),
+    ).toBeNull();
+  });
+
+  it("schedules a selection sync after a navigation keydown (auto-repeat)", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // Spy on the plain-ish `_syncSelection` (accessible at runtime) and drive
+    // the keydown handler directly. Navigation keys must schedule a sync so the
+    // rendered caret/scroll stay live while a key is held (auto-repeat).
+    const spy = vi.fn((el as unknown as { _syncSelection: () => void })._syncSelection.bind(el));
+    (el as unknown as Record<string, unknown>)._syncSelection = spy;
+
+    (el as unknown as { _onComposerKeydown: (e: KeyboardEvent) => void })._onComposerKeydown(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, composed: true }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not schedule a selection sync for a non-navigation keydown", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    inputEl.focus();
+    await el.updateComplete;
+
+    const spy = vi.fn((el as unknown as { _syncSelection: () => void })._syncSelection.bind(el));
+    (el as unknown as Record<string, unknown>)._syncSelection = spy;
+
+    (el as unknown as { _onComposerKeydown: (e: KeyboardEvent) => void })._onComposerKeydown(
+      new KeyboardEvent("keydown", { key: "x", bubbles: true, composed: true }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("keeps a code token intact and overlays the caret when it sits inside one", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "use `read_file` now";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    // raw offset 7 is inside "read_file" (after "re").
+    inputEl.setSelectionRange(7, 7);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const code = content.querySelector("code");
+    expect(code?.textContent).toBe("read_file");
+    expect(content.querySelector(".composer-caret")).toBeTruthy();
+    expect((el as unknown as { _caretRaw: number })._caretRaw).toBe(7);
+  });
+
+  it("does not style text from an unclosed backtick to the end of the line", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    // A single opening backtick with no closing one: nothing should be styled
+    // as code, and the backtick itself should stay readable (not vanish).
+    (inputEl as { value: string }).value = "use `read_file now";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelector("code")).toBeNull();
+    expect(content.textContent).toBe("use `read_file now");
+    // Submit should be enabled since there is real, non-code text.
+    expect((el.shadowRoot!.querySelector(".composer-send") as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("only styles between matched backtick pairs, ignoring an unclosed trailing one", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    // "b" is a matched pair; the trailing "d" after the lone backtick is not.
+    (inputEl as { value: string }).value = "a `b` c `d";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelectorAll("code")).toHaveLength(1);
+    expect(content.querySelector("code")?.textContent).toBe("b");
+    expect(content.textContent).toBe("a b c `d");
+  });
+
+  it("renders backtick content inside an element carrying a background chip", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "use `read_file` now";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelector("code")).toBeTruthy();
+    // jsdom doesn't apply shadow-DOM styles to getComputedStyle, so assert the
+    // chip backdrop is declared in the component's stylesheet.
+    const css = el.shadowRoot!.querySelector("style")?.textContent ?? "";
+    expect(css).toMatch(
+      /composer-content code[^{]*\{[^}]*background: rgba\(255, 255, 255, 0\.06\)/,
+    );
+  });
+
+  it("drops the blinking caret when the composer loses focus but keeps the highlight", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    (inputEl as { value: string }).value = "hello world";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    inputEl.focus();
+    await el.updateComplete;
+
+    inputEl.setSelectionRange(6, 11);
+    inputEl.dispatchEvent(new Event("select", { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Blur: caret disappears, highlight remains (and text is not shifted).
+    inputEl.dispatchEvent(new FocusEvent("blur"));
+    await el.updateComplete;
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    expect(content.querySelector(".composer-caret")).toBeNull();
+    expect(content.querySelector(".composer-highlight")?.textContent).toBe("world");
+    expect(content.textContent).toBe("hello world");
+  });
+});
+
+describe("AgentsChat paged transcript", () => {
+  type Msg = { id: string; role: "user" | "assistant"; content: string; timestamp: number };
+
+  function makeMessages(total: number): Msg[] {
+    const out: Msg[] = [];
+    for (let i = 0; i < total; i++) {
+      out.push({
+        id: "m-" + i,
+        role: "assistant",
+        content: "message " + i + " needle",
+        timestamp: 1000 + i,
+      });
+    }
+    return out;
+  }
+
+  function mount() {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it("opens in paged mode and reports hasOlderMessages", async () => {
+    const el = mount();
+    await el.updateComplete;
+    el.openTranscriptPaged(
+      { id: "c1", title: "Chat", providerId: "vllm" },
+      {
+        chatId: "c1",
+        start: 2,
+        total: 5,
+        messages: makeMessages(5).slice(2, 5),
+      },
+    );
+    await el.updateComplete;
+    expect(el.transcriptTotal).toBe(5);
+    expect(el.hasOlderMessages).toBe(true);
+    expect(el.shadowRoot!.querySelectorAll(".chat-message").length).toBe(3);
+  });
+
+  it("prepends the older page via the loadMessages seam", async () => {
+    const el = mount();
+    await el.updateComplete;
+    const calls: Array<[string, number, number]> = [];
+    el.loadMessages = (chatId, offset, count) => {
+      calls.push([chatId, offset, count]);
+      return Promise.resolve({
+        chatId,
+        start: offset,
+        total: 5,
+        messages: makeMessages(5).slice(offset, offset + count),
+      });
+    };
+    el.openTranscriptPaged(
+      { id: "c1", title: "Chat", providerId: "vllm" },
+      {
+        chatId: "c1",
+        start: 2,
+        total: 5,
+        messages: makeMessages(5).slice(2, 5),
+      },
+    );
+    await el.updateComplete;
+
+    await el.loadOlderMessages();
+    await el.updateComplete;
+    expect(calls[0]).toEqual(["c1", 0, 2]);
+    expect(el.shadowRoot!.querySelectorAll(".chat-message").length).toBe(5);
+    expect(el.hasOlderMessages).toBe(false);
+    expect(el.transcriptTotal).toBe(5);
+  });
+
+  it("does not fetch once the window reaches the transcript start", async () => {
+    const el = mount();
+    await el.updateComplete;
+    const calls: number[] = [];
+    el.loadMessages = (_chatId, offset, count) => {
+      calls.push(offset);
+      return Promise.resolve({
+        chatId: "c1",
+        start: offset,
+        total: 5,
+        messages: makeMessages(5).slice(offset, offset + count),
+      });
+    };
+    el.openTranscriptPaged(
+      { id: "c1", title: "Chat", providerId: "vllm" },
+      {
+        chatId: "c1",
+        start: 0,
+        total: 5,
+        messages: makeMessages(5),
+      },
+    );
+    await el.updateComplete;
+    await el.loadOlderMessages();
+    expect(calls.length).toBe(0);
+  });
+
+  it("navigates to a search hit by loading its page", async () => {
+    const el = mount();
+    await el.updateComplete;
+    // The hit lives at m-30, outside the seeded window (m-0..m-19).
+    el.chatSearch = () =>
+      Promise.resolve({
+        query: "needle",
+        regex: false,
+        caseSensitive: false,
+        total: 9,
+        hits: [{ messageId: "m-30", text: "needle", order: 0, messageIndex: 30 }],
+      });
+    el.loadMessages = (_chatId, offset, count) =>
+      Promise.resolve({
+        chatId: "c1",
+        start: Math.max(0, offset),
+        total: 40,
+        messages: makeMessages(40).slice(Math.max(0, offset), Math.max(0, offset) + count),
+      });
+    el.openTranscriptPaged(
+      { id: "c1", title: "Chat", providerId: "vllm" },
+      {
+        chatId: "c1",
+        start: 0,
+        total: 40,
+        messages: makeMessages(20),
+      },
+    );
+    await el.updateComplete;
+
+    const btn = el.shadowRoot!.querySelector(".bb-find") as HTMLButtonElement;
+    btn.click();
+    await el.updateComplete;
+    const input = el.shadowRoot!.querySelector(".chat-findbar input") as HTMLInputElement;
+    input.value = "needle";
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await new Promise((r) => setTimeout(r, 200));
+    await el.updateComplete;
+
+    const active = el.shadowRoot!.querySelector("mark.chat-hit-active") as HTMLElement;
+    expect(active).toBeTruthy();
+    expect(el.shadowRoot!.querySelectorAll("mark.chat-hit").length).toBe(1);
+    expect(el.shadowRoot!.querySelector(".chat-findbar .find-count")!.textContent!.trim()).toBe(
+      "1/9",
+    );
+  });
+});

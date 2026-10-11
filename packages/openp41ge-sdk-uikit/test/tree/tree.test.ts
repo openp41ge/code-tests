@@ -1,0 +1,750 @@
+// @ts-nocheck
+/**
+ * Unit tests for <openp41ge-tree> component.
+ *
+ * Tests cover the new features added in the uikit tree upgrade:
+ *   - Async expansion (onToggle, loading spinner, collapse on reject)
+ *   - Context menu (tree-node-contextmenu event)
+ *   - Double-click (tree-node-dblclick event)
+ *   - Status CSS classes
+ *   - Badge rendering
+ *   - onExpandedChange callback
+ */
+
+import { vi, describe, test, expect, beforeEach, afterEach } from "vitest";
+import "../../src/components/tree/tree";
+import type { Openp41geTree } from "../../src/components/tree/tree";
+import type { TreeNode } from "../../src/components/tree/types";
+
+// ─── Polyfill CSS.escape (not available in jsdom) ─────────────────
+
+if (typeof CSS === "undefined") {
+  (globalThis as any).CSS = { escape: (s: string) => s.replace(/["\\]/g, "\\$&") };
+} else if (!CSS.escape) {
+  CSS.escape = (s: string) => s.replace(/["\\]/g, "\\$&");
+}
+
+// ─── Polyfill DataTransfer (not available in jsdom) ──────────────
+
+if (typeof DataTransfer === "undefined") {
+  (globalThis as any).DataTransfer = class DataTransfer {
+    _data: Record<string, string> = {};
+    setData(type: string, value: string) {
+      this._data[type] = value;
+    }
+    getData(type: string) {
+      return this._data[type] || "";
+    }
+    get types() {
+      return Object.keys(this._data);
+    }
+    clearData() {
+      this._data = {};
+    }
+    effectAllowed: string = "uninitialized";
+    dropEffect: string = "none";
+    files: File[] = [];
+    items: DataTransferItem[] = [];
+  };
+}
+
+// ─── Polyfill DragEvent (not available in jsdom) ────────────────
+
+if (typeof DragEvent === "undefined") {
+  const OrigMouseEvent = MouseEvent;
+  (globalThis as any).DragEvent = class DragEvent extends OrigMouseEvent {
+    constructor(type: string, init?: DragEventInit) {
+      super(type, init);
+      (this as any).dataTransfer = init?.dataTransfer ?? null;
+    }
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+const sampleNodes: TreeNode[] = [
+  {
+    id: "src",
+    label: "src",
+    icon: "folder",
+    children: [
+      { id: "src/app.ts", label: "app.ts", icon: "typescript", draggable: true },
+      { id: "src/utils.ts", label: "utils.ts", icon: "typescript", draggable: true },
+    ],
+  },
+  {
+    id: "README.md",
+    label: "README.md",
+    icon: "markdown",
+    draggable: true,
+  },
+  {
+    id: "styles",
+    label: "styles",
+    icon: "folder",
+    children: [{ id: "styles/theme.css", label: "theme.css", icon: "css" }],
+  },
+];
+
+async function createTree(): Promise<Openp41geTree> {
+  return createTreeWithNodes(sampleNodes);
+}
+
+async function createTreeWithNodes(nodes: TreeNode[]): Promise<Openp41geTree> {
+  const tree = document.createElement("openp41ge-tree") as Openp41geTree;
+  tree.nodes = nodes;
+  document.body.appendChild(tree);
+  await (tree as any).updateComplete;
+  return tree;
+}
+
+function getShadowRoot(el: HTMLElement): ShadowRoot | null {
+  return el.shadowRoot;
+}
+
+function queryInTree(tree: Openp41geTree, selector: string): HTMLElement | null {
+  const root = getShadowRoot(tree);
+  if (!root) return null;
+  return root.querySelector(selector);
+}
+
+function queryAllInTree(tree: Openp41geTree, selector: string): HTMLElement[] {
+  const root = getShadowRoot(tree);
+  if (!root) return [];
+  const direct = Array.from(root.querySelectorAll(selector));
+  // Also search into nested <openp41ge-tree> child elements' shadow roots
+  const nestedTrees = root.querySelectorAll("openp41ge-tree");
+  for (const nested of nestedTrees) {
+    const nestedRoot = getShadowRoot(nested as HTMLElement);
+    if (nestedRoot) {
+      direct.push(...Array.from(nestedRoot.querySelectorAll(selector)));
+    }
+  }
+  return direct;
+}
+
+function getNodeRow(tree: Openp41geTree, nodeId: string): HTMLElement | null {
+  // Search in own shadow root first, then in nested trees' shadow roots
+  const root = getShadowRoot(tree);
+  if (root) {
+    const own = root.querySelector(`[data-node-id="${nodeId}"]`);
+    if (own) return own as HTMLElement;
+    const nestedTrees = root.querySelectorAll("openp41ge-tree");
+    for (const nested of nestedTrees) {
+      const nestedRoot = getShadowRoot(nested as HTMLElement);
+      if (nestedRoot) {
+        const found = nestedRoot.querySelector(`[data-node-id="${nodeId}"]`);
+        if (found) return found as HTMLElement;
+      }
+    }
+  }
+  return null;
+}
+
+// ─── Setup / Teardown ────────────────────────────────────────────────
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+// ─── Basic Rendering ────────────────────────────────────────────────
+
+describe("basic rendering", () => {
+  test("renders all top-level nodes", async () => {
+    const tree = await createTree();
+    const rows = queryAllInTree(tree, "[data-node-id]");
+    expect(rows.length).toBe(3);
+    expect(rows[0].getAttribute("data-node-id")).toBe("src");
+    expect(rows[1].getAttribute("data-node-id")).toBe("README.md");
+    expect(rows[2].getAttribute("data-node-id")).toBe("styles");
+  });
+
+  test("renders labels", async () => {
+    const tree = await createTree();
+    const srcRow = getNodeRow(tree, "src");
+    const label = srcRow?.querySelector(".tree-label");
+    expect(label?.textContent).toBe("src");
+  });
+
+  test("collapsed children are not visible", async () => {
+    const tree = await createTree();
+    const childRows = queryAllInTree(tree, '[data-node-id="src/app.ts"]');
+    expect(childRows.length).toBe(0);
+  });
+
+  test("empty tree shows empty message", async () => {
+    const tree = document.createElement("openp41ge-tree") as Openp41geTree;
+    tree.nodes = [];
+    document.body.appendChild(tree);
+    await (tree as any).updateComplete;
+    const empty = queryInTree(tree, ".tree-empty");
+    expect(empty).toBeTruthy();
+  });
+});
+
+// ─── Expand / Collapse ───────────────────────────────────────────────
+
+describe("expand / collapse", () => {
+  test("clicking a collapsible node toggles expanded state", async () => {
+    const tree = await createTree();
+    const srcRow = getNodeRow(tree, "src");
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("false");
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("true");
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  test("expanding a node reveals its children", async () => {
+    const tree = await createTree();
+    const srcRow = getNodeRow(tree, "src");
+
+    expect(queryAllInTree(tree, '[data-node-id="src/app.ts"]').length).toBe(0);
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(queryAllInTree(tree, '[data-node-id="src/app.ts"]').length).toBe(1);
+  });
+
+  test("dispatches tree-node-toggle event", async () => {
+    const tree = await createTree();
+    const handler = vi.fn();
+    tree.addEventListener("tree-node-toggle", handler);
+
+    const srcRow = getNodeRow(tree, "src");
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const detail = handler.mock.calls[0][0].detail;
+    expect(detail.nodeId).toBe("src");
+    expect(detail.expanded).toBe(true);
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler.mock.calls[1][0].detail.expanded).toBe(false);
+  });
+
+  test("clicking a leaf node dispatches tree-node-click", async () => {
+    const tree = await createTree();
+    const handler = vi.fn();
+    tree.addEventListener("tree-node-click", handler);
+
+    const readmeRow = getNodeRow(tree, "README.md");
+    readmeRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0].detail.nodeId).toBe("README.md");
+  });
+});
+
+// ─── Async Expansion (onToggle) ─────────────────────────────────────
+
+describe("async expansion (onToggle)", () => {
+  test("shows loading spinner when onToggle is pending", async () => {
+    const tree = await createTree();
+    let resolvePromise: () => void = () => {};
+    tree.onToggle = () =>
+      new Promise<void>((resolve) => {
+        resolvePromise = resolve;
+      });
+
+    const srcRow = getNodeRow(tree, "src");
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    // Should show spinner instead of chevron
+    const spinner = queryInTree(tree, ".tree-spinner");
+    expect(spinner).toBeTruthy();
+
+    // Resolve the promise
+    resolvePromise();
+    await new Promise((r) => setTimeout(r, 10));
+    await (tree as any).updateComplete;
+
+    // Spinner should be gone
+    const spinnerAfter = queryInTree(tree, ".tree-spinner");
+    expect(spinnerAfter).toBeNull();
+  });
+
+  test("expands node after onToggle resolves", async () => {
+    const tree = await createTree();
+    let resolvePromise: () => void = () => {};
+    tree.onToggle = () =>
+      new Promise<void>((resolve) => {
+        resolvePromise = resolve;
+      });
+
+    const srcRow = getNodeRow(tree, "src");
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    // Children should not yet be visible (still loading)
+    expect(queryAllInTree(tree, '[data-node-id="src/app.ts"]').length).toBe(0);
+
+    // Update nodes to have children (simulating consumer populating children)
+    tree.nodes = tree.nodes.map((n) => {
+      if (n.id === "src") {
+        return {
+          ...n,
+          children: [
+            { id: "src/app.ts", label: "app.ts", icon: "typescript" },
+            { id: "src/utils.ts", label: "utils.ts", icon: "typescript" },
+          ],
+        };
+      }
+      return n;
+    });
+    resolvePromise();
+    await new Promise((r) => setTimeout(r, 10));
+    await (tree as any).updateComplete;
+
+    // Children should now be visible
+    expect(queryAllInTree(tree, '[data-node-id="src/app.ts"]').length).toBe(1);
+  });
+
+  test("collapses node on onToggle reject", async () => {
+    const tree = await createTree();
+    let rejectPromise: (err: Error) => void = () => {};
+    tree.onToggle = () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectPromise = reject;
+      });
+
+    const srcRow = getNodeRow(tree, "src");
+
+    const errorHandler = vi.fn();
+    tree.addEventListener("tree-node-toggle-error", errorHandler);
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("true");
+
+    rejectPromise(new Error("test error"));
+    await new Promise((r) => setTimeout(r, 10));
+    await (tree as any).updateComplete;
+
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("false");
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler.mock.calls[0][0].detail.error).toBeInstanceOf(Error);
+  });
+
+  test("clicking chevron during loading cancels the operation", async () => {
+    const tree = await createTree();
+    tree.onToggle = () =>
+      new Promise<void>(() => {
+        // Never resolves
+      });
+
+    const srcRow = getNodeRow(tree, "src");
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("true");
+    expect(queryInTree(tree, ".tree-spinner")).toBeTruthy();
+
+    // Click again to collapse
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(srcRow?.getAttribute("aria-expanded")).toBe("false");
+    expect(queryInTree(tree, ".tree-spinner")).toBeNull();
+  });
+});
+
+// ─── Context Menu ───────────────────────────────────────────────────
+
+describe("context menu", () => {
+  test("dispatches tree-node-contextmenu on right-click", async () => {
+    const tree = await createTree();
+    const handler = vi.fn();
+    tree.addEventListener("tree-node-contextmenu", handler);
+
+    const readmeRow = getNodeRow(tree, "README.md");
+    readmeRow?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 100,
+        clientY: 200,
+      }),
+    );
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const detail = handler.mock.calls[0][0].detail;
+    expect(detail.nodeId).toBe("README.md");
+    expect(detail.clientX).toBe(100);
+    expect(detail.clientY).toBe(200);
+  });
+
+  test("prevents default browser context menu on tree nodes", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    const prevented = !readmeRow?.dispatchEvent(event);
+
+    expect(prevented).toBe(true);
+  });
+});
+
+// ─── Double-click ───────────────────────────────────────────────────
+
+describe("double-click", () => {
+  test("dispatches tree-node-dblclick on leaf node double-click", async () => {
+    const tree = await createTree();
+    const handler = vi.fn();
+    tree.addEventListener("tree-node-dblclick", handler);
+
+    const readmeRow = getNodeRow(tree, "README.md");
+    readmeRow?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0].detail.nodeId).toBe("README.md");
+  });
+
+  test("single-click on leaf does not fire dblclick", async () => {
+    const tree = await createTree();
+    const dblclickHandler = vi.fn();
+    tree.addEventListener("tree-node-dblclick", dblclickHandler);
+
+    const readmeRow = getNodeRow(tree, "README.md");
+    readmeRow?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    await (tree as any).updateComplete;
+
+    expect(dblclickHandler).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Status ─────────────────────────────────────────────────────────
+
+describe("status", () => {
+  test("applies tree-node--status-untracked CSS class", async () => {
+    const tree = await createTree();
+    tree.nodes = [{ id: "untracked-file", label: "untracked.ts", status: "untracked" }];
+    await (tree as any).updateComplete;
+
+    const row = getNodeRow(tree, "untracked-file");
+    expect(row?.classList.contains("tree-node--status-untracked")).toBe(true);
+  });
+
+  test("applies tree-node--status-pending CSS class", async () => {
+    const tree = await createTree();
+    tree.nodes = [{ id: "pending-file", label: "pending.ts", status: "pending" }];
+    await (tree as any).updateComplete;
+
+    const row = getNodeRow(tree, "pending-file");
+    expect(row?.classList.contains("tree-node--status-pending")).toBe(true);
+  });
+
+  test("applies tree-node--status-error CSS class", async () => {
+    const tree = await createTree();
+    tree.nodes = [{ id: "error-file", label: "error.ts", status: "error" }];
+    await (tree as any).updateComplete;
+
+    const row = getNodeRow(tree, "error-file");
+    expect(row?.classList.contains("tree-node--status-error")).toBe(true);
+  });
+
+  test("no status class when status is undefined", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+    const hasStatusClass = Array.from(readmeRow?.classList ?? []).some((c) =>
+      c.startsWith("tree-node--status-"),
+    );
+    expect(hasStatusClass).toBe(false);
+  });
+});
+
+// ─── Badge ──────────────────────────────────────────────────────────
+
+describe("badge", () => {
+  test("renders badge text after label", async () => {
+    const tree = await createTree();
+    tree.nodes = [{ id: "pending-node", label: "feature-x", badge: "(pending)" }];
+    await (tree as any).updateComplete;
+
+    const row = getNodeRow(tree, "pending-node");
+    const badge = row?.querySelector(".tree-badge");
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toBe("(pending)");
+  });
+
+  test("no badge element when badge is undefined", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+    const badge = readmeRow?.querySelector(".tree-badge");
+    expect(badge).toBeNull();
+  });
+});
+
+// ─── onExpandedChange ───────────────────────────────────────────────
+
+describe("onExpandedChange", () => {
+  test("fires callback when toggling expand", async () => {
+    const tree = await createTree();
+    const handler = vi.fn();
+    tree.onExpandedChange = handler;
+
+    const srcRow = getNodeRow(tree, "src");
+    srcRow?.click();
+    await (tree as any).updateComplete;
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0]).toBe("src");
+    expect(handler.mock.calls[0][1]).toBe(true);
+
+    srcRow?.click();
+    await (tree as any).updateComplete;
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler.mock.calls[1][0]).toBe("src");
+    expect(handler.mock.calls[1][1]).toBe(false);
+  });
+});
+
+// ─── Drag and Drop ─────────────────────────────────────────────────
+
+describe("file path marker (data-file-path)", () => {
+  test("draggable node with meta.filePath renders data-file-path", async () => {
+    const tree = await createTreeWithNodes([
+      {
+        id: "/repo/app.ts",
+        label: "app.ts",
+        icon: "typescript",
+        draggable: true,
+        meta: { filePath: "/repo/app.ts" },
+      },
+    ]);
+    const row = getNodeRow(tree, "/repo/app.ts");
+    expect(row?.getAttribute("data-file-path")).toBe("/repo/app.ts");
+    // Native draggable stays intact (the platform suppresses it via dragstart)
+    expect(row?.getAttribute("draggable")).toBe("true");
+  });
+
+  test("draggable node without meta.filePath does not render data-file-path", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+    expect(readmeRow?.getAttribute("data-file-path")).toBeNull();
+    expect(readmeRow?.getAttribute("draggable")).toBe("true");
+  });
+
+  test("non-draggable directory node with meta.filePath does not render data-file-path", async () => {
+    const tree = await createTreeWithNodes([
+      {
+        id: "/repo/src",
+        label: "src",
+        icon: "folder-closed",
+        expandable: true,
+        meta: { filePath: "/repo/src", isDirectory: true },
+      },
+    ]);
+    const row = getNodeRow(tree, "/repo/src");
+    expect(row?.getAttribute("draggable")).toBe("false");
+    expect(row?.getAttribute("data-file-path")).toBeNull();
+  });
+});
+
+describe("drag and drop", () => {
+  test("draggable node has draggable attribute", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+    expect(readmeRow?.getAttribute("draggable")).toBe("true");
+  });
+
+  test("non-draggable node does not have draggable attribute", async () => {
+    const tree = await createTree();
+    const stylesRow = getNodeRow(tree, "styles");
+    expect(stylesRow?.getAttribute("draggable")).toBe("false");
+  });
+
+  test("dragstart sets text/plain data", async () => {
+    const tree = await createTree();
+    const readmeRow = getNodeRow(tree, "README.md");
+
+    const dt = new DataTransfer();
+    const event = new DragEvent("dragstart", {
+      bubbles: true,
+      dataTransfer: dt,
+    });
+    readmeRow?.dispatchEvent(event);
+
+    expect(dt.getData("text/plain")).toBe("README.md");
+  });
+});
+
+// ─── renderLabel ─────────────────────────────────────────────────────
+
+describe("renderLabel", () => {
+  test("uses the custom label renderer when the node provides one", async () => {
+    const nodes: TreeNode[] = [
+      {
+        id: "file.js",
+        label: "file.js",
+        icon: "javascript",
+        showChevron: true,
+        expanded: true,
+        children: [
+          {
+            id: "file.js:match:0",
+            label: "let drawing = false;",
+            showChevron: false,
+            renderLabel: (_node: unknown, ctx: any) => {
+              // The renderer must receive the row geometry so it can position
+              // a gutter relative to the row.
+              expect(typeof ctx.depth).toBe("number");
+              expect(typeof ctx.paddingLeft).toBe("number");
+              expect(typeof ctx.labelOffset).toBe("number");
+              expect(typeof ctx.indentPerLevel).toBe("number");
+              return `line ${ctx.depth}`;
+            },
+          },
+        ],
+      },
+    ];
+    const tree = await createTreeWithNodes(nodes);
+    const matchRow = getNodeRow(tree, "file.js:match:0");
+    const label = matchRow?.querySelector(".tree-label");
+    expect(label?.textContent?.trim()).toBe("line 1");
+  });
+
+  test("reduceIndent pulls a child row back toward its parent", async () => {
+    const nodes: TreeNode[] = [
+      {
+        id: "file.js",
+        label: "file.js",
+        icon: "javascript",
+        showChevron: true,
+        expanded: true,
+        children: [
+          {
+            id: "file.js:match:0",
+            label: "match",
+            showChevron: false,
+            reduceIndent: 16,
+            renderLabel: () => "<span class='cm-match-gutter'>1</span>",
+          },
+        ],
+      },
+    ];
+    const tree = await createTreeWithNodes(nodes);
+    const matchRow = getNodeRow(tree, "file.js:match:0");
+    const fileRow = getNodeRow(tree, "file.js");
+    // With reduceIndent the match row's left padding equals the parent file's.
+    expect(matchRow?.style.paddingLeft).toBe(fileRow?.style.paddingLeft);
+  });
+});
+
+describe("virtualization", () => {
+  function manyChildren(n: number): TreeNode[] {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `f${i}`,
+      label: `file${i}.ts`,
+      icon: "typescript",
+    }));
+  }
+
+  test("renders every row when the viewport is not measurable (fallback)", async () => {
+    const tree = await createTreeWithNodes([
+      { id: "src", label: "src", icon: "folder", expanded: true, children: manyChildren(40) },
+    ]);
+    tree.virtualize = true;
+    await tree.updateComplete;
+    const rows = queryAllInTree(tree, ".tree-node");
+    expect(rows.length).toBe(41); // folder + 40 children
+  });
+
+  test("renders only a window of rows when the viewport is measurable", async () => {
+    const tree = await createTreeWithNodes([
+      { id: "src", label: "src", icon: "folder", expanded: true, children: manyChildren(200) },
+    ]);
+    tree.virtualize = true;
+    await tree.updateComplete;
+    // Simulate a measurable 300px viewport → a ~13-row window + overscan.
+    (tree as any)._viewportHeight = 300;
+    (tree as any)._scrollTop = 0;
+    await tree.updateComplete;
+    const rows = queryAllInTree(tree, ".tree-node");
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.length).toBeLessThan(201);
+    // A bottom spacer keeps the full scrollable height.
+    expect(queryInTree(tree, ".tree-virtual-spacer")).not.toBeNull();
+  });
+
+  test("virtualizes against an external scroll container", async () => {
+    // The Explorer stacks several trees inside one panel scroller, so the tree
+    // must be able to window against a container it does not own.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const tree = await createTreeWithNodes([
+      { id: "src", label: "src", icon: "folder", expanded: true, children: manyChildren(200) },
+    ]);
+    container.appendChild(tree);
+    tree.scrollContainer = container;
+    tree.virtualize = true;
+    await tree.updateComplete;
+
+    // The root is a plain block — the container owns the scrollbar.
+    expect(queryInTree(tree, ".tree-root--virtual-external")).not.toBeNull();
+    expect(queryInTree(tree, ".tree-root--virtual")).toBeNull();
+
+    (tree as any)._viewportHeight = 300;
+    (tree as any)._scrollTop = 0;
+    await tree.updateComplete;
+    const rows = queryAllInTree(tree, ".tree-node");
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.length).toBeLessThan(201);
+    container.remove();
+  });
+
+  test("binds the scroll container when virtualization switches on later", async () => {
+    // The Explorer flips `virtualize` on once a tree grows past its threshold,
+    // which is after the first render — the listener must still attach.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const tree = await createTreeWithNodes([
+      { id: "src", label: "src", icon: "folder", expanded: true, children: manyChildren(200) },
+    ]);
+    container.appendChild(tree);
+    await tree.updateComplete;
+    expect((tree as any)._scrollEl).toBeNull();
+
+    const added: string[] = [];
+    const origAdd = container.addEventListener.bind(container);
+    container.addEventListener = ((type: string, ...rest: unknown[]) => {
+      added.push(type);
+      return (origAdd as any)(type, ...rest);
+    }) as typeof container.addEventListener;
+
+    tree.scrollContainer = container;
+    tree.virtualize = true;
+    await tree.updateComplete;
+    expect((tree as any)._scrollEl).toBe(container);
+    expect(added).toContain("scroll");
+    container.remove();
+  });
+
+  test("scrolls the virtual window as scrollTop advances", async () => {
+    const tree = await createTreeWithNodes([
+      { id: "src", label: "src", icon: "folder", expanded: true, children: manyChildren(200) },
+    ]);
+    tree.virtualize = true;
+    await tree.updateComplete;
+    (tree as any)._viewportHeight = 300;
+    (tree as any)._scrollTop = 2000;
+    await tree.updateComplete;
+    const rows = queryAllInTree(tree, ".tree-node");
+    // Scroll into the middle of the list — the first row is no longer rendered.
+    const ids = rows.map((r) => (r as any).dataset.nodeId);
+    expect(ids).not.toContain("src");
+    expect(ids).toContain("f80");
+  });
+});

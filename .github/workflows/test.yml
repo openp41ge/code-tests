@@ -1,0 +1,112 @@
+# Tests a commit of openp41ge/app and reports the result back to it as the
+# `app-tests` commit status (which the app's release gate requires).
+#
+# Triggered by the app's prerequisites workflow (repository_dispatch), by a
+# maintainer (workflow_dispatch with a sha), or by a push here (tests the
+# app's current master).
+name: test
+
+on:
+  repository_dispatch:
+    types: [test-app]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: openp41ge/app commit to test
+        required: true
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+env:
+  NX_NO_CLOUD: "true"
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+concurrency:
+  group: test-${{ github.event.client_payload.sha || inputs.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: openp41ge
+          repositories: app
+          permission-statuses: write # report the result
+
+      - name: Resolve the app commit
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PAYLOAD_SHA: ${{ github.event.client_payload.sha || inputs.sha }}
+        run: |
+          SHA="$PAYLOAD_SHA"
+          if [ -z "$SHA" ]; then
+            SHA="$(gh api repos/openp41ge/app/commits/master --jq .sha)"
+          fi
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      # Statuses stay generic: the public can see them, but not the tests.
+      - name: Report pending
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh api "repos/openp41ge/app/statuses/$SHA" \
+            -f state=pending -f context=app-tests -f description=Running -f target_url="$RUN_URL"
+
+      # The local layout: app-tests beside app/master (support/app.ts).
+      - uses: actions/checkout@v4
+        with:
+          path: app-tests
+      - uses: actions/checkout@v4
+        with:
+          repository: openp41ge/app
+          ref: ${{ env.SHA }}
+          path: app/master
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/master/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: |
+            app/master/pnpm-lock.yaml
+            app-tests/pnpm-lock.yaml
+
+      - name: Install and build the app
+        working-directory: app/master
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm nx run-many -t build
+
+      - name: Run the tests
+        working-directory: app-tests
+        env:
+          APP_DIR: ${{ github.workspace }}/app/master
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+
+      - name: Report the result
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          case "$OUTCOME" in
+            success) STATE=success; DESC=Passed ;;
+            cancelled) STATE=error; DESC=Cancelled ;;
+            *) STATE=failure; DESC=Failed ;;
+          esac
+          gh api "repos/openp41ge/app/statuses/$SHA" \
+            -f state="$STATE" -f context=app-tests -f description="$DESC" -f target_url="$RUN_URL"

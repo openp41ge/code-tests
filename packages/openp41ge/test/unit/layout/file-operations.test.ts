@@ -1,0 +1,116 @@
+// @ts-nocheck
+/**
+ * Unit tests for layout file operations — actionOpenFileInNewWindow.
+ *
+ * Verifies that a file dropped outside any window creates a new window that
+ * copies the source window's non-editor chrome (sidebar tabs, repo list) while
+ * starting with a fresh central grid containing only the dropped file.
+ */
+
+import * as types from "@openp41ge/layout/types";
+import * as ops from "@openp41ge/layout/operations";
+
+/** Open Explorer + Git in the right sidebar of a window, plus a file in the grid. */
+function buildSourceWs() {
+  const ws = types.createWorkspace("ws1");
+  let result = ops.openSystemTab(ws, ws.windows[0].id, "right", "explorer", "Explorer", true);
+  result = ops.openSystemTab(result, ws.windows[0].id, "right", "git", "History", true);
+  const tab = types.createTab("p1", "file-viewer", "app.ts", { filePath: "/src/app.ts" });
+  result = ops.addTabToCell(result, ws.windows[0].id, tab, 0, 0);
+  return result;
+}
+
+describe("splitFileOpen empty-grid guard", () => {
+  test("fills column 0 full-width without creating an empty cell on an empty grid", () => {
+    const ws = types.createWorkspace("ws1");
+    const winId = ws.windows[0].id;
+    // empty grid has no placements
+    expect(ws.windows[0].grid.placements).toEqual([]);
+
+    // boundary drop on the right side of the empty grid (splitCol 0, splitLeft false)
+    const result = ops.splitFileOpen(ws, winId, "file-viewer", "app.ts", "/src/app.ts", 0, false);
+
+    const grid = result.windows[0].grid;
+    // No split: still a single full-width column (no empty neighbour)
+    expect(grid.cols).toBe(1);
+    expect(grid.placements).toHaveLength(1);
+    const p = grid.placements[0];
+    expect(p.position.col).toBe(0);
+    expect(p.tabIds).toHaveLength(1);
+    const tab = result.editorTabs[p.tabIds[0] as string];
+    expect(tab?.appType).toBe("file-viewer");
+    expect(tab?.config?.filePath).toBe("/src/app.ts");
+  });
+
+  test("still splits when the target grid already has tabs", () => {
+    const ws = types.createWorkspace("ws1");
+    let r = ops.addTabToCell(ws, ws.windows[0].id, types.createTab("p1", "terminal", "t"), 0, 0);
+    r = ops.splitFileOpen(r, ws.windows[0].id, "file-viewer", "app.ts", "/src/app.ts", 0, false);
+    const grid = r.windows[0].grid;
+    expect(grid.cols).toBe(2);
+    expect(grid.placements).toHaveLength(2);
+    expect(grid.placements.some((pl) => pl.position.col === 0)).toBe(true);
+    expect(grid.placements.some((pl) => pl.position.col === 1)).toBe(true);
+  });
+
+  test("carries an extraConfig payload (e.g. { source }) onto the split tab", () => {
+    const ws = types.createWorkspace("ws1");
+    let r = ops.addTabToCell(ws, ws.windows[0].id, types.createTab("p1", "terminal", "t"), 0, 0);
+    r = ops.splitFileOpen(r, ws.windows[0].id, "log-viewer", "editor-engine", undefined, 0, false, {
+      source: "editor-engine",
+    });
+    const grid = r.windows[0].grid;
+    const p = grid.placements.find((pl) => pl.position.col === 1);
+    const tab = r.editorTabs[p!.tabIds[0] as string];
+    expect(tab?.appType).toBe("log-viewer");
+    expect(tab?.config?.source).toBe("editor-engine");
+  });
+});
+
+describe("actionOpenFileInNewWindow", () => {
+  test("creates a new window in the same workspace with the file in its grid", () => {
+    const src = buildSourceWs();
+    const srcWin = src.windows[0];
+
+    const result = ops.actionOpenFileInNewWindow(src, "/src/other.ts", "other.ts", srcWin.id);
+
+    const newWin = result.windows.find((w) => w.id !== srcWin.id);
+    expect(newWin).toBeDefined();
+    // Same workspace — window count grows by exactly one
+    expect(result.windows).toHaveLength(src.windows.length + 1);
+    // New grid has exactly one placement, holding the dropped file
+    expect(newWin.grid.placements).toHaveLength(1);
+    const p = newWin.grid.placements[0];
+    expect(p.tabIds).toHaveLength(1);
+    const tab = result.editorTabs[p.tabIds[0]];
+    expect(tab?.appType).toBe("file-viewer");
+    expect(tab?.config?.filePath).toBe("/src/other.ts");
+  });
+
+  test("copies the source window's sidebar tabs and open state", () => {
+    const src = buildSourceWs();
+    const srcWin = src.windows[0];
+
+    const result = ops.actionOpenFileInNewWindow(src, "/a.ts", "a.ts", srcWin.id);
+    const newWin = result.windows.find((w) => w.id !== srcWin.id);
+
+    // Sidebar tabs/state are shared across a workspace's windows.
+    expect(result.sidebar.rightSidebarTabs).toEqual(src.sidebar.rightSidebarTabs);
+    expect(result.sidebar.rightSidebarOpen).toBe(src.sidebar.rightSidebarOpen);
+    expect(result.sidebar.leftSidebarOpen).toBe(src.sidebar.leftSidebarOpen);
+    // The new window copies the source window's per-window active state.
+    expect(newWin.sidebar.activeRightTab).toBe(srcWin.sidebar.activeRightTab);
+  });
+
+  test("without a source window the new window has an empty default sidebar", () => {
+    const src = buildSourceWs();
+    const srcWin = src.windows[0];
+
+    const result = ops.actionOpenFileInNewWindow(src, "/a.ts", "a.ts");
+    const newWin = result.windows.find((w) => w.id !== srcWin.id);
+
+    // The new window shares the workspace's sidebar; its per-window active tab
+    // starts empty.
+    expect(newWin.sidebar.activeRightTab).toBeNull();
+  });
+});

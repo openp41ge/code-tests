@@ -1,0 +1,286 @@
+/**
+ * Unit tests for error-capture-service logging.
+ *
+ * Verifies the P2 instrumentation: uncaught errors / unhandled rejections emit
+ * a `log.error` entry into the log bus (so they land in the bus + on-disk file),
+ * while still only adding a single toast entry (the console.error replay from
+ * `log.error` is suppressed so it isn't double-counted).
+ *
+ * Errors surface via a NON-BLOCKING persistent toast plus a reactive error
+ * store (subscribeErrors) that the manager's "Errors" tab renders as a grid.
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  installErrorCapture,
+  clearCapturedErrors,
+  subscribeErrors,
+  getCapturedErrors,
+  setErrorToastEnabled,
+  isErrorToastEnabled,
+  type CapturedError,
+} from "@openp41ge/renderer/services/error-capture-service";
+import { subscribeLogs, setMinLevel, LogLevel, createLogger, type LogEntry } from "openp41ge-core-logger";
+
+function errorEntries(entries: LogEntry[]): LogEntry[] {
+  return entries.filter((e) => e.level === LogLevel.ERROR);
+}
+
+function fireError(message: string): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window.onerror as any)(message, "b.js", 1, 2, new Error(message));
+}
+
+describe("error-capture-service logging", () => {
+  beforeEach(() => {
+    setMinLevel(LogLevel.DEBUG);
+    installErrorCapture();
+  });
+
+  afterEach(() => {
+    clearCapturedErrors();
+    setMinLevel(LogLevel.INFO);
+    // Clear leftover toast items (keep the container; the service caches it).
+    document.querySelector("openp41ge-toast")?.replaceChildren();
+  });
+
+  it("emits a log.error entry when window.onerror fires (uncaught exception)", () => {
+    const entries: LogEntry[] = [];
+    const unsub = subscribeLogs((e) => e && entries.push(e));
+
+    fireError("boom message");
+
+    unsub();
+
+    const errEntry = errorEntries(entries).find((e) => e.data?.message === "boom message");
+    expect(errEntry).toBeDefined();
+    expect(errEntry?.message).toContain("uncaught-error");
+    expect(errEntry?.data?.source).toBe("b.js");
+  });
+
+  it("emits a log.error entry for unhandled rejections", () => {
+    const entries: LogEntry[] = [];
+    const unsub = subscribeLogs((e) => e && entries.push(e));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window.onunhandledrejection as any)({
+      reason: new Error("rejection reason"),
+    });
+
+    unsub();
+
+    const errEntry = errorEntries(entries).find(
+      (e) => e.message.includes("unhandled-rejection") && e.data?.message === "rejection reason",
+    );
+    expect(errEntry).toBeDefined();
+    expect(errEntry?.data?.message).toBe("rejection reason");
+  });
+
+  it("does not log benign renderer diagnostics (ResizeObserver loop)", () => {
+    const entries: LogEntry[] = [];
+    const unsub = subscribeLogs((e) => e && entries.push(e)); // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window.onerror as any)(
+      "ResizeObserver loop completed with undelivered notifications",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    unsub();
+
+    expect(errorEntries(entries)).toHaveLength(0);
+  });
+
+  it("shows a non-blocking error toast on an uncaught error", () => {
+    fireError("toast test boom");
+
+    const container = document.querySelector("openp41ge-toast");
+    expect(container).not.toBeNull();
+    const item = container!.querySelector(".openp41ge-toast-error");
+    expect(item).not.toBeNull();
+    expect(item!.textContent).toContain("toast test boom");
+    // It must never be a blocking full-screen overlay.
+    expect(document.getElementById("_openp41ge-error-overlay")).toBeNull();
+  });
+
+  it("does not auto-dismiss error toasts", () => {
+    vi.useFakeTimers();
+    try {
+      fireError("persist boom");
+      expect(document.querySelector("openp41ge-toast .openp41ge-toast-error")).not.toBeNull();
+      vi.advanceTimersByTime(100_000);
+      // Still present long after any auto-dismiss window.
+      expect(document.querySelector("openp41ge-toast .openp41ge-toast-error")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("wraps long error messages at 180 chars in the toast preview", () => {
+    fireError("x".repeat(300));
+    const item = document.querySelector("openp41ge-toast .openp41ge-toast-error");
+    expect(item!.textContent).toContain("…");
+    // 180 preview + "Error: " prefix + dismiss glyph, so well under the raw 300.
+    expect(item!.textContent!.length).toBeLessThan(200);
+  });
+
+  it("opens the Logs window when the error toast is clicked", () => {
+    const openLogsWindow = vi.fn();
+    (window as unknown as { openp41ge: unknown }).openp41ge = {
+      windowManager: { openLogsWindow },
+    };
+    fireError("grid boom");
+    (document.querySelector("openp41ge-toast .openp41ge-toast-error") as HTMLElement).click();
+    expect(openLogsWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not count an error twice through the console replay", () => {
+    fireError("double count boom");
+    const errors = getCapturedErrors();
+    expect(errors.filter((e) => e.message.includes("double count boom"))).toHaveLength(1);
+  });
+});
+
+describe("error-capture-service error store", () => {
+  beforeEach(() => {
+    setMinLevel(LogLevel.DEBUG);
+    installErrorCapture();
+  });
+
+  afterEach(() => {
+    clearCapturedErrors();
+    setMinLevel(LogLevel.INFO);
+    document.querySelector("openp41ge-toast")?.replaceChildren();
+  });
+
+  function withListener(cb: (errors: CapturedError[]) => void): {
+    seen: number[];
+    unsubscribe: () => void;
+  } {
+    const seen: number[] = [];
+    const unsubscribe = subscribeErrors((errs: CapturedError[]) => {
+      seen.push(errs.length);
+      cb(errs);
+    });
+    return { seen, unsubscribe };
+  }
+
+  it("subscribes to the current list and to subsequent changes", () => {
+    const { seen, unsubscribe } = withListener(() => {});
+    expect(seen).toContain(0);
+
+    fireError("store boom");
+    expect(seen.at(-1)).toBe(1);
+    expect(getCapturedErrors().length).toBe(1);
+    unsubscribe();
+  });
+
+  it("prepends new errors (newest first) and notifies subscribers", () => {
+    let latest: CapturedError[] = [];
+    const unsubscribe = subscribeErrors((errs) => {
+      latest = errs;
+    });
+    fireError("first");
+    fireError("second");
+
+    expect(latest[0].message).toBe("second");
+    expect(latest[1].message).toBe("first");
+    expect(getCapturedErrors().length).toBe(2);
+    unsubscribe();
+  });
+
+  it("clearCapturedErrors empties the store and removes the persisted copy", () => {
+    fireError("clear boom");
+    expect(getCapturedErrors().length).toBe(1);
+    expect(sessionStorage.getItem("openp41ge:captured-errors")).not.toBeNull();
+
+    clearCapturedErrors();
+    expect(getCapturedErrors()).toHaveLength(0);
+    expect(sessionStorage.getItem("openp41ge:captured-errors")).toBeNull();
+  });
+
+  it("throttles a runaway storm of identical errors to a bounded count", () => {
+    const entries: LogEntry[] = [];
+    const unsub = subscribeLogs((e) => e && entries.push(e));
+    const before = getCapturedErrors().length;
+
+    // 200 identical errors in the same throttling window.
+    for (let i = 0; i < 200; i++) fireError("runaway identical error");
+
+    unsub();
+
+    const stormLogs = errorEntries(entries).filter(
+      (e) => e.message.includes("uncaught-error") && e.data?.message === "runaway identical error",
+    );
+    // A storm must never become one log line (or log-bus entry) per error.
+    expect(stormLogs.length).toBeLessThanOrEqual(5);
+
+    // The in-memory error store stays bounded too.
+    expect(getCapturedErrors().length - before).toBeLessThanOrEqual(5);
+
+    // And the flood is surfaced as an aggregation notice rather than silence.
+    expect(errorEntries(entries).some((e) => e.message.includes("error-burst"))).toBe(true);
+  });
+});
+
+describe("error-capture-service toast policy", () => {
+  beforeEach(() => {
+    setMinLevel(LogLevel.DEBUG);
+    installErrorCapture();
+    setErrorToastEnabled(true);
+  });
+
+  afterEach(() => {
+    clearCapturedErrors();
+    setMinLevel(LogLevel.INFO);
+    setErrorToastEnabled(true);
+    document.querySelector("openp41ge-toast")?.replaceChildren();
+  });
+
+  it("falls back to showing toasts when isDev is unavailable (tests / browser)", () => {
+    // window.openp41ge.isDev is not defined in this environment.
+    expect(isErrorToastEnabled()).toBe(true);
+  });
+
+  it("still captures an error but suppresses the toast when skipToast is set", () => {
+    // Simulate a `log.error("msg", { skipToast: true })` reaching the console.
+    // eslint-disable-next-line no-console
+    console.error("[openp41ge]", "quiet boom", { skipToast: true });
+
+    expect(document.querySelector("openp41ge-toast .openp41ge-toast-error")).toBeNull();
+    expect(getCapturedErrors().some((e) => e.message.includes("quiet boom"))).toBe(true);
+  });
+
+  it("shows a toast by default (no skipToast option)", () => {
+    // eslint-disable-next-line no-console
+    console.error("[openp41ge]", "loud boom", { someData: 1 });
+
+    const item = document.querySelector("openp41ge-toast .openp41ge-toast-error");
+    expect(item).not.toBeNull();
+    expect(item!.textContent).toContain("loud boom");
+  });
+
+  it("honors skipToast through the real logger (Error arg in between)", () => {
+    const log = createLogger("test", "toast-policy");
+    log.error("real boom", new Error("underlying cause"), { skipToast: true });
+
+    expect(document.querySelector("openp41ge-toast .openp41ge-toast-error")).toBeNull();
+    expect(getCapturedErrors().some((e) => e.message.includes("real boom"))).toBe(true);
+  });
+
+  it("suppresses all toasts when globally disabled, while still capturing", () => {
+    setErrorToastEnabled(false);
+    expect(isErrorToastEnabled()).toBe(false);
+
+    // eslint-disable-next-line no-console
+    console.error("[openp41ge]", "global off boom");
+
+    expect(document.querySelector("openp41ge-toast .openp41ge-toast-error")).toBeNull();
+    expect(getCapturedErrors().some((e) => e.message.includes("global off boom"))).toBe(true);
+
+    // Re-enabling restores toasts.
+    setErrorToastEnabled(true);
+    expect(isErrorToastEnabled()).toBe(true);
+  });
+});

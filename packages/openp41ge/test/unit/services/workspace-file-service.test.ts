@@ -1,0 +1,505 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import {
+  WorkspaceFileService,
+  workspaceMatchesQuery,
+  deriveRepoName,
+} from "../../../src/renderer/services/workspace-file-service";
+import type { WorkspaceFileData } from "../../../src/layout/types";
+
+function wsData(overrides: Partial<{ name?: string }> = {}): {
+  id: string;
+  name?: string;
+  version: number;
+  createdAt: string;
+  dataDir: string;
+  repos: Array<{ url: string; worktrees: string[] }>;
+} {
+  return { id: "1", version: 1, createdAt: "", dataDir: "", repos: [], ...overrides };
+}
+
+describe("WorkspaceFileService.openWorkspaceName", () => {
+  let svc: WorkspaceFileService;
+
+  beforeEach(() => {
+    svc = new WorkspaceFileService();
+  });
+
+  it("uses data.name when set (trimmed)", () => {
+    svc.openFilePath = "~/.openp41ge/workspaces/x.openp41ge-workspace";
+    svc.openData = wsData({ name: "  My Workspace  " });
+    expect(svc.openWorkspaceName).toBe("My Workspace");
+  });
+
+  it("falls back to the file basename (minus extension) when no name is set", () => {
+    svc.openFilePath = "~/.openp41ge/workspaces/abc.openp41ge-workspace";
+    svc.openData = wsData();
+    expect(svc.openWorkspaceName).toBe("abc");
+  });
+
+  it("falls back to the basename when name is only whitespace", () => {
+    svc.openFilePath = "~/dir/foo.openp41ge-workspace";
+    svc.openData = wsData({ name: "   " });
+    expect(svc.openWorkspaceName).toBe("foo");
+  });
+
+  it("returns 'No workspace' when nothing is active", () => {
+    expect(svc.openWorkspaceName).toBe("No workspace");
+  });
+});
+
+describe("workspaceMatchesQuery", () => {
+  const data = (overrides: Partial<WorkspaceFileData> = {}): WorkspaceFileData => ({
+    id: "1",
+    name: "Alpha",
+    version: 1,
+    createdAt: "",
+    dataDir: "",
+    repos: [{ url: "https://github.com/acme/widget.git", worktrees: ["main", "feature/xyz"] }],
+    ...overrides,
+  });
+
+  it.each([
+    ["", true],
+    ["   ", true],
+    ["alpha", true],
+    ["al", true],
+    ["widget", true],
+    ["acme/widget", true],
+    ["feature/xyz", true],
+    ["main", true],
+    ["nothing-here", false],
+  ])("query %j -> %s", (q, expected) => {
+    expect(workspaceMatchesQuery(data(), "/x/alpha.openp41ge-workspace", q)).toBe(expected);
+  });
+
+  it("matches on the file basename when the workspace has no name", () => {
+    const d = data({ name: undefined });
+    expect(workspaceMatchesQuery(d, "~/.openp41ge/workspaces/zzz.openp41ge-workspace", "zzz")).toBe(
+      true,
+    );
+  });
+});
+
+describe("WorkspaceFileService.materializeActiveRepos / deriveRepoName", () => {
+  function installBridge(mocks: {
+    cloneOk?: boolean;
+    cloneError?: string;
+    wtOk?: boolean;
+    wtError?: string;
+  }): {
+    clone: ReturnType<typeof vi.fn>;
+    checkoutWorktree: ReturnType<typeof vi.fn>;
+  } {
+    const clone = vi.fn().mockImplementation((_url: string) => ({
+      promise: Promise.resolve({ success: mocks.cloneOk ?? true, error: mocks.cloneError }),
+      onProgress: () => () => {},
+      destroy: () => {},
+    }));
+    const checkoutWorktree = vi
+      .fn()
+      .mockImplementation(() =>
+        mocks.wtOk === false
+          ? Promise.reject(new Error(mocks.wtError ?? "wt fail"))
+          : Promise.resolve({ branch: "", path: "", exists: true }),
+      );
+    (
+      window as unknown as { openp41ge: { workspaceController: unknown } }
+    ).openp41ge.workspaceController = {
+      clone,
+      checkoutWorktree,
+    };
+    return { clone, checkoutWorktree };
+  }
+
+  const repo = (url: string, worktrees: string[]) => ({ url, worktrees });
+
+  it("returns [] and calls nothing when there is no active data or repos", async () => {
+    const { clone, checkoutWorktree } = installBridge({});
+    const svc = new WorkspaceFileService();
+    svc.openData = { id: "1", version: 1, createdAt: "", dataDir: "", repos: [] };
+
+    expect(await svc.materializeActiveRepos()).toEqual([]);
+    expect(clone).not.toHaveBeenCalled();
+    expect(checkoutWorktree).not.toHaveBeenCalled();
+  });
+
+  it("clones the bare repo, registers it, and checks out each worktree", async () => {
+    const { clone, checkoutWorktree } = installBridge({});
+    const svc = new WorkspaceFileService();
+    svc.openData = {
+      id: "1",
+      version: 1,
+      createdAt: "",
+      dataDir: "",
+      repos: [repo("https://github.com/acme/widget.git", ["main", "feature/x"])],
+    };
+
+    const outcomes = await svc.materializeActiveRepos();
+
+    expect(clone).toHaveBeenCalledWith("https://github.com/acme/widget.git");
+    expect(checkoutWorktree).toHaveBeenCalledTimes(2);
+    expect(checkoutWorktree).toHaveBeenCalledWith("github.com/acme/widget", "main");
+    expect(checkoutWorktree).toHaveBeenCalledWith("github.com/acme/widget", "feature/x");
+    expect(outcomes).toEqual([
+      {
+        url: "https://github.com/acme/widget.git",
+        name: "github.com/acme/widget",
+        ok: true,
+        worktrees: [
+          { branch: "main", ok: true },
+          { branch: "feature/x", ok: true },
+        ],
+      },
+    ]);
+  });
+
+  it("marks the repo failed (and skips worktrees) when the clone fails", async () => {
+    const { clone, checkoutWorktree } = installBridge({ cloneOk: false, cloneError: "auth" });
+    const svc = new WorkspaceFileService();
+    svc.openData = {
+      id: "1",
+      version: 1,
+      createdAt: "",
+      dataDir: "",
+      repos: [repo("https://github.com/acme/widget.git", ["main"])],
+    };
+
+    const outcomes = await svc.materializeActiveRepos();
+
+    expect(clone).toHaveBeenCalledWith("https://github.com/acme/widget.git");
+    expect(checkoutWorktree).not.toHaveBeenCalled();
+    expect(outcomes[0]).toMatchObject({
+      url: "https://github.com/acme/widget.git",
+      ok: false,
+      error: "auth",
+      worktrees: [],
+    });
+  });
+
+  it("captures worktree checkout failures without failing the whole run", async () => {
+    const { checkoutWorktree } = installBridge({ wtOk: false, wtError: "no branch" });
+    const svc = new WorkspaceFileService();
+    svc.openData = {
+      id: "1",
+      version: 1,
+      createdAt: "",
+      dataDir: "",
+      repos: [repo("https://github.com/acme/widget.git", ["main", "dev"])],
+    };
+
+    const outcomes = await svc.materializeActiveRepos();
+
+    expect(checkoutWorktree).toHaveBeenCalledTimes(2);
+    expect(outcomes[0].worktrees).toEqual([
+      { branch: "main", ok: false, error: "no branch" },
+      { branch: "dev", ok: false, error: "no branch" },
+    ]);
+    expect(outcomes[0].ok).toBe(false);
+  });
+});
+
+describe("WorkspaceFileService activation recency stamping", () => {
+  let svc: WorkspaceFileService;
+  let write: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    svc = new WorkspaceFileService();
+    write = vi.fn().mockResolvedValue(true);
+    (
+      window as unknown as { openp41ge: { dialog: { writeWorkspaceFile: unknown } } }
+    ).openp41ge.dialog = { writeWorkspaceFile: write };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-02T03:04:05.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const entry = () => ({
+    filePath: "~/.openp41ge/workspaces/x.openp41ge-workspace",
+    data: wsData({ name: "X" }),
+  });
+
+  it("stamps lastActivatedAt, persists it, and sets openData to the stamped copy", async () => {
+    const ok = await svc.openWorkspace(entry());
+    expect(ok).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    const [path, data] = write.mock.calls[0] as [string, WorkspaceFileData];
+    expect(path).toBe("~/.openp41ge/workspaces/x.openp41ge-workspace");
+    expect(data.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+    expect(svc.openData?.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+  });
+
+  it("does not write when recordAccess is false", async () => {
+    const ok = await svc.openWorkspace(entry(), { recordAccess: false });
+    expect(ok).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+    expect(svc.openData?.lastActivatedAt).toBeUndefined();
+  });
+
+  it("swallows persist failure: activation still succeeds but reports false", async () => {
+    write.mockResolvedValue(false);
+    const ok = await svc.openWorkspace(entry());
+    expect(ok).toBe(false);
+    expect(svc.openFilePath).toBe("~/.openp41ge/workspaces/x.openp41ge-workspace");
+    expect(svc.openData?.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+  });
+
+  it("still activates without throwing when writeWorkspaceFile itself throws", async () => {
+    write.mockRejectedValue(new Error("disk"));
+    await expect(svc.openWorkspace(entry())).resolves.toBe(false);
+    expect(svc.openData?.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+  });
+
+  it("createWorkspace persists a lastActivatedAt equal to creation time", async () => {
+    (
+      window as unknown as { openp41ge: { dialog: { ensureDir: () => Promise<boolean> } } }
+    ).openp41ge.dialog.ensureDir = vi.fn().mockResolvedValue(true);
+    const data = await svc.createWorkspace("Alpha");
+    expect(data?.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+    expect(write).toHaveBeenCalled();
+  });
+
+  it("saveAs stamps the data sent to the save dialog (and only that file)", async () => {
+    let sent: WorkspaceFileData | undefined;
+    (
+      window as unknown as {
+        openp41ge: {
+          dialog: { saveWorkspaceFile: (d: WorkspaceFileData) => Promise<string | null> };
+        };
+      }
+    ).openp41ge.dialog.saveWorkspaceFile = vi
+      .fn()
+      .mockImplementation(async (d: WorkspaceFileData) => {
+        sent = d;
+        return "~/.openp41ge/workspaces/new.openp41ge-workspace";
+      });
+    svc.openData = wsData({ name: "X" });
+    const saved = await svc.saveAs();
+    expect(saved).toBe("~/.openp41ge/workspaces/new.openp41ge-workspace");
+    expect(sent?.lastActivatedAt).toBe("2026-01-02T03:04:05.000Z");
+    expect(write).not.toHaveBeenCalled(); // saveAs writes via the save dialog, not writeWorkspaceFile
+  });
+});
+
+describe("WorkspaceFileService.active-repo list helpers", () => {
+  let svc: WorkspaceFileService;
+
+  beforeEach(() => {
+    svc = new WorkspaceFileService();
+    svc.openData = wsData();
+  });
+
+  it("addRepoToActive appends a bare repo entry and returns true", () => {
+    expect(svc.addRepoToActive("https://github.com/acme/widget.git")).toBe(true);
+    expect(svc.openData!.repos).toEqual([
+      { url: "https://github.com/acme/widget.git", worktrees: [] },
+    ]);
+  });
+
+  it("addRepoToActive is idempotent by URL (false when already present)", () => {
+    svc.addRepoToActive("https://github.com/acme/widget.git");
+    expect(svc.addRepoToActive("https://github.com/acme/widget.git")).toBe(false);
+    expect(svc.openData!.repos).toHaveLength(1);
+  });
+
+  it("addRepoToActive treats another URL form of the same repo as a duplicate", () => {
+    svc.addRepoToActive("git@github.com:acme/widget.git");
+    expect(svc.addRepoToActive("https://github.com/acme/widget")).toBe(false);
+    expect(svc.openData!.repos).toHaveLength(1);
+  });
+
+  it("addRepoToActive refuses a URL that is not a full clone URL", () => {
+    expect(svc.addRepoToActive("github.com/acme/widget")).toBe(false);
+    expect(svc.openData!.repos ?? []).toEqual([]);
+  });
+
+  it("addRepoToActive is a no-op without an open workspace", () => {
+    svc.openData = null;
+    expect(svc.addRepoToActive("https://github.com/acme/widget.git")).toBe(false);
+  });
+
+  it("addWorktreeToActive adds a branch to the matching repo (by derived name)", () => {
+    svc.openData!.repos = [{ url: "https://github.com/acme/widget.git", worktrees: [] }];
+    expect(svc.addWorktreeToActive("github.com/acme/widget", "main")).toBe(true);
+    expect(svc.openData!.repos[0].worktrees).toEqual(["main"]);
+  });
+
+  it("removeRepoFromActive removes a repo by derived name", () => {
+    svc.openData!.repos = [
+      { url: "git@github.com:acme/widget.git", worktrees: ["main"] },
+      { url: "https://github.com/acme/web.git", worktrees: [] },
+    ];
+    expect(svc.removeRepoFromActive("github.com/acme/widget")).toBe(true);
+    expect(svc.openData!.repos.map((r) => r.url)).toEqual(["https://github.com/acme/web.git"]);
+    expect(svc.removeRepoFromActive("github.com/acme/widget")).toBe(false);
+  });
+
+  it("hasWorktreeInActive reports a repo's worktrees by derived name", () => {
+    svc.openData!.repos = [{ url: "https://github.com/acme/widget.git", worktrees: ["main"] }];
+    expect(svc.hasWorktreeInActive("github.com/acme/widget", "main")).toBe(true);
+    expect(svc.hasWorktreeInActive("github.com/acme/widget", "dev")).toBe(false);
+    expect(svc.hasWorktreeInActive("github.com/acme/other", "main")).toBe(false);
+  });
+
+  it("addWorktreeToActive does not duplicate a branch", () => {
+    svc.openData!.repos = [{ url: "https://github.com/acme/widget.git", worktrees: ["main"] }];
+    expect(svc.addWorktreeToActive("github.com/acme/widget", "main")).toBe(false);
+    expect(svc.openData!.repos[0].worktrees).toEqual(["main"]);
+  });
+
+  it("addWorktreeToActive ignores unknown repos", () => {
+    svc.openData!.repos = [{ url: "https://github.com/acme/widget.git", worktrees: [] }];
+    expect(svc.addWorktreeToActive("github.com/acme/other", "main")).toBe(false);
+    expect(svc.addWorktreeToActive("github.com/acme/widget", "")).toBe(false);
+  });
+
+  it("removeWorktreeFromActive drops a branch from the matching repo", () => {
+    svc.openData!.repos = [
+      { url: "https://github.com/acme/widget.git", worktrees: ["main", "dev"] },
+    ];
+    expect(svc.removeWorktreeFromActive("github.com/acme/widget", "main")).toBe(true);
+    expect(svc.openData!.repos[0].worktrees).toEqual(["dev"]);
+    expect(svc.removeWorktreeFromActive("github.com/acme/widget", "main")).toBe(false);
+  });
+});
+
+describe("WorkspaceFileService — following the open file on disk", () => {
+  const PATH = "/ws/a.openp41ge-workspace";
+  const repo = { url: "git@github.com:o/r.git", worktrees: [] };
+
+  function installDisk(onDisk: WorkspaceFileData) {
+    const listeners = new Set<(c: { path: string }) => void>();
+    const readWorkspaceFile = vi.fn(async (filePath: string) => ({ filePath, data: onDisk }));
+    (window as unknown as { openp41ge: Record<string, unknown> }).openp41ge = {
+      dialog: { readWorkspaceFile },
+      workspaceController: {
+        onWorkspaceFileChanged: (fn: (c: { path: string }) => void) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+      },
+    };
+    return { readWorkspaceFile, emit: (path: string) => listeners.forEach((fn) => fn({ path })) };
+  }
+
+  function openService(): WorkspaceFileService {
+    const svc = new WorkspaceFileService();
+    svc.openFilePath = PATH;
+    svc.openData = {
+      id: "a",
+      name: "Old",
+      version: 2,
+      createdAt: "",
+      dataDir: "",
+      repos: [],
+      windows: [{ id: "w-live" }] as never,
+    };
+    return svc;
+  }
+
+  it("takes the manifest from disk, keeps its own layout session, and says it changed", async () => {
+    installDisk({
+      id: "a",
+      name: "New",
+      version: 2,
+      createdAt: "",
+      dataDir: "",
+      repos: [repo],
+      windows: [{ id: "w-stale" }] as never,
+    });
+    const svc = openService();
+    const changed = vi.fn();
+    svc.onChange(changed);
+    expect(await svc.reloadManifest(PATH)).toBe(true);
+    expect(svc.openData?.name).toBe("New");
+    expect(svc.openData?.repos).toEqual([repo]);
+    expect(svc.openData?.windows).toEqual([{ id: "w-live" }]);
+    expect(changed).toHaveBeenCalled();
+  });
+
+  it("ignores another workspace's file", async () => {
+    const { readWorkspaceFile } = installDisk({} as WorkspaceFileData);
+    const svc = openService();
+    expect(await svc.reloadManifest("/ws/other.openp41ge-workspace")).toBe(false);
+    expect(readWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("follows the platform's change notices for its open file", async () => {
+    const { emit, readWorkspaceFile } = installDisk({
+      id: "a",
+      version: 2,
+      createdAt: "",
+      dataDir: "",
+      repos: [repo],
+    });
+    const svc = openService();
+    const stop = svc.followDiskChanges();
+    emit(PATH);
+    await vi.waitFor(() => expect(svc.openData?.repos).toEqual([repo]));
+    stop();
+    emit(PATH);
+    expect(readWorkspaceFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WorkspaceFileService — saves merge onto the file on disk", () => {
+  const PATH = "/ws/a.openp41ge-workspace";
+  const A = { url: "git@github.com:o/a.git", worktrees: [] };
+  const B = { url: "git@github.com:o/b.git", worktrees: [] };
+  const C = { url: "git@github.com:o/c.git", worktrees: [] };
+  const file = (over: Partial<WorkspaceFileData>): WorkspaceFileData => ({
+    id: "a",
+    name: "A",
+    version: 2,
+    createdAt: "",
+    dataDir: "",
+    repos: [A],
+    ...over,
+  });
+
+  let disk: WorkspaceFileData;
+  let write: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    disk = file({ windows: [{ id: "w1" }] as never });
+    write = vi.fn(async (_p: string, data: WorkspaceFileData) => {
+      disk = data;
+      return true;
+    });
+    (window as unknown as { openp41ge: Record<string, unknown> }).openp41ge = {
+      dialog: {
+        readWorkspaceFile: vi.fn(async (filePath: string) => ({ filePath, data: disk })),
+        writeWorkspaceFile: write,
+      },
+    };
+  });
+
+  async function opened(): Promise<WorkspaceFileService> {
+    const svc = new WorkspaceFileService();
+    await svc.loadPath(PATH);
+    return svc;
+  }
+
+  it("keeps another writer's changes and the saved layout", async () => {
+    const svc = await opened();
+    // Meanwhile the editor renamed it and added B; the window saved its layout.
+    disk = file({ name: "Renamed", repos: [A, B], windows: [{ id: "w2" }] as never });
+    svc.addRepoToActive(C.url);
+    expect(await svc.save()).toBe(true);
+    const written = write.mock.calls.at(-1)?.[1] as WorkspaceFileData;
+    expect(written.repos).toEqual([A, B, C]);
+    expect(written.name).toBe("Renamed");
+    expect(written.windows).toEqual([{ id: "w2" }]);
+    expect(svc.openData?.repos).toEqual([A, B, C]);
+  });
+
+  it("keeps a change made but not yet saved when the file reloads", async () => {
+    const svc = await opened();
+    svc.addRepoToActive(C.url);
+    disk = file({ repos: [A, B] });
+    await svc.reloadManifest(PATH);
+    expect(svc.openData?.repos).toEqual([A, B, C]);
+  });
+});
