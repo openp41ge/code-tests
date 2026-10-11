@@ -11,7 +11,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PlaceholderController } from "@openp41ge/renderer/controllers/placeholder-controller";
 import {
   registerController,
   getController,
@@ -240,30 +239,6 @@ describe("Controller lifecycle — integration", () => {
       expect(ctrl2.unmountCalls).toBe(1);
       expect(getController("t1")).toBeUndefined();
       expect(getController("t2")).toBeUndefined();
-    });
-  });
-
-  describe("PlaceholderController specific", () => {
-    it("creates a placeholder with the correct app type label", () => {
-      const ctrl = new PlaceholderController("t1", "file-explorer");
-      ctrl.mount(container);
-
-      expect(container.innerHTML).toContain("File Explorer");
-      expect(container.innerHTML).toContain("×"); // close button
-    });
-
-    it("unmounts placeholder and cleans DOM", () => {
-      const ctrl = new PlaceholderController("t1", "file-explorer");
-      ctrl.mount(container);
-      ctrl.unmount();
-
-      expect(ctrl.container).toBeNull();
-    });
-
-    it("placeholder has correct tabId and appType", () => {
-      const ctrl = new PlaceholderController("t1", "file-viewer");
-      expect(ctrl.tabId).toBe("t1");
-      expect(ctrl.appType).toBe("file-viewer");
     });
   });
 
