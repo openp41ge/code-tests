@@ -121,6 +121,28 @@ describe("AutoUpdaterService", () => {
     expect(updater.allowPrerelease).toBe(false);
   });
 
+  it("says auto-update is not available in development mode on check and download (dev build)", async () => {
+    const updater = makeUpdater();
+    const svc = new AutoUpdaterService(fakeConfig({ updateChannel: "alpha" }), {
+      isPackaged: false,
+      updaterFactory: async () => updater,
+    });
+    const message = "auto-update is not available in development mode";
+    expect(await svc.checkForUpdates()).toEqual({ state: "error", message });
+    expect(await svc.downloadUpdate()).toEqual({ state: "error", message });
+    expect(updater.calls).toEqual([]);
+  });
+
+  it("says auto-update is not available when a packaged build has no updater", async () => {
+    const svc = new AutoUpdaterService(fakeConfig({}), {
+      isPackaged: true,
+      updaterFactory: async () => null,
+    });
+    const message = "auto-update is not available";
+    expect(await svc.checkForUpdates()).toEqual({ state: "error", message });
+    expect(await svc.downloadUpdate()).toEqual({ state: "error", message });
+  });
+
   it("configures the updater channel + allowPrerelease when packaged", async () => {
     const updater = makeUpdater();
     const svc = new AutoUpdaterService(fakeConfig({ updateChannel: "alpha" }), {
