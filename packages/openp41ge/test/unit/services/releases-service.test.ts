@@ -1,17 +1,15 @@
 /**
- * Tests for the renderer GitHub releases service: API fetch, channel-based
- * prerelease filtering, and tag/date helpers used by the Releases tab pane.
+ * Tests for the renderer releases helpers: channel-based filtering (the
+ * Releases and Channels views) and tag/date helpers used by the Releases tab.
  */
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, test, expect } from "vitest";
 import {
-  fetchReleases,
-  fetchReleasesPage,
+  selectInRange,
   selectLatestPerChannel,
   channelsForUpdateChannel,
   compareTags,
   channelFromTag,
   formatReleaseDate,
-  RELEASES_API,
   type GithubRelease,
 } from "../../../src/renderer/services/releases-service";
 
@@ -32,55 +30,6 @@ const ALPHA: GithubRelease = {
   body: "Alpha 4.",
   html_url: "https://github.com/openp41ge/app/releases/tag/v0.1.0-alpha.4",
 };
-
-describe("releases-service — fetchReleases", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  test("fetches the repo releases endpoint and parses the array", async () => {
-    const mock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => [STABLE, ALPHA],
-    });
-    vi.stubGlobal("fetch", mock);
-
-    const releases = await fetchReleases();
-    expect(mock).toHaveBeenCalledWith(
-      RELEASES_API,
-      expect.objectContaining({ headers: { Accept: "application/vnd.github+json" } }),
-    );
-    expect(releases).toEqual([STABLE, ALPHA]);
-  });
-
-  test("throws on a non-2xx response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) }),
-    );
-    await expect(fetchReleases()).rejects.toThrow(/403/);
-  });
-
-  test("returns [] when the payload is not an array", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
-    );
-    await expect(fetchReleases()).resolves.toEqual([]);
-  });
-
-  test("forwards an abort signal", async () => {
-    const mock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] });
-    vi.stubGlobal("fetch", mock);
-    const controller = new AbortController();
-    await fetchReleases("https://example.test/releases", controller.signal);
-    expect(mock.mock.calls[0][1]).toMatchObject({ signal: controller.signal });
-  });
-});
 
 describe("releases-service — channelsForUpdateChannel", () => {
   test("latest resolves to the stable-only window", () => {
@@ -156,31 +105,6 @@ describe("releases-service — compareTags", () => {
   });
 });
 
-describe("releases-service — fetchReleasesPage", () => {
-  beforeEach(() => vi.restoreAllMocks());
-  afterEach(() => vi.unstubAllGlobals());
-
-  test("appends the page query to the endpoint URL", async () => {
-    const mock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [STABLE] });
-    vi.stubGlobal("fetch", mock);
-    await fetchReleasesPage(3);
-    expect(mock.mock.calls[0][0]).toContain("page=3");
-  });
-
-  test("throws on a non-2xx response and returns [] for non-array payloads", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }),
-    );
-    await expect(fetchReleasesPage(1)).rejects.toThrow(/500/);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
-    );
-    await expect(fetchReleasesPage(1)).resolves.toEqual([]);
-  });
-});
-
 describe("releases-service — helpers", () => {
   test("channelFromTag derives alpha/beta/rc/stable from the tag", () => {
     expect(channelFromTag("v0.1.0-alpha.4")).toBe("alpha");
@@ -194,5 +118,36 @@ describe("releases-service — helpers", () => {
     expect(out).toMatch(/2026/);
     expect(formatReleaseDate(null)).toBe("");
     expect(formatReleaseDate("not-a-date")).toBe("");
+  });
+});
+
+describe("selectInRange", () => {
+  const r = (tag: string, published_at: string) => ({
+    tag_name: tag,
+    name: tag,
+    prerelease: tag.includes("-"),
+    published_at,
+    body: null,
+    html_url: null,
+  });
+  const all = [
+    r("v0.1.0-alpha.7", "2026-10-11T00:00:00Z"),
+    r("v0.1.0", "2026-10-01T00:00:00Z"),
+    r("v0.1.0-alpha.8", "2026-10-12T00:00:00Z"),
+    r("v0.1.0-beta.1", "2026-10-05T00:00:00Z"),
+  ];
+
+  test("lists every release in the setting's range, newest first", () => {
+    expect(selectInRange("alpha", all).map((x) => x.tag_name)).toEqual([
+      "v0.1.0-alpha.8",
+      "v0.1.0-alpha.7",
+      "v0.1.0-beta.1",
+      "v0.1.0",
+    ]);
+  });
+
+  test("leaves out less stable channels", () => {
+    expect(selectInRange("beta", all).map((x) => x.tag_name)).toEqual(["v0.1.0-beta.1", "v0.1.0"]);
+    expect(selectInRange("latest", all).map((x) => x.tag_name)).toEqual(["v0.1.0"]);
   });
 });
