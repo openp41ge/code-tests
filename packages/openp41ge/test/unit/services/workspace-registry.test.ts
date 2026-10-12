@@ -51,4 +51,19 @@ describe("WorkspaceRegistry", () => {
     registry.getOrCreate("/a");
     expect(terminalCleanup).not.toHaveBeenCalled();
   });
+
+  it("persistAll saves every open workspace to its own file, with its own layout", () => {
+    const save = vi.fn();
+    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save, terminalCleanup: vi.fn() });
+    const a = registry.getOrCreate("/a");
+    const b = registry.getOrCreate("/b");
+    a.apply("addWindow", ["w2"]);
+    save.mockClear();
+
+    registry.persistAll();
+
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenCalledWith("/a", a.getWorkspace());
+    expect(save).toHaveBeenCalledWith("/b", b.getWorkspace());
+  });
 });
