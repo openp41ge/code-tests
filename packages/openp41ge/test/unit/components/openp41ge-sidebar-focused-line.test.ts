@@ -1,10 +1,11 @@
 /**
  * <openp41ge-sidebar>: when the sidebar is focused, its active tab has the
- * same 2px blue top line as the grid's focused tab. Other tabs, and every tab
+ * same blue top line as the grid's focused tab. Other tabs, and every tab
  * of a sidebar that is not focused, do not.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import "../../../src/renderer/components/openp41ge-sidebar";
+import { expectFocusLine } from "../../../../openp41ge-sdk-uikit/test/components/tabs/focus-line-expect";
 
 type Sidebar = HTMLElement & {
   side: string;
@@ -48,9 +49,9 @@ describe("sidebar focused line", () => {
     expect(el.querySelector("[data-focused]")).toBeNull();
   });
 
-  it("draws a 2px blue line across the focused tab's top edge", async () => {
+  it("draws the focus line: half the tab's width, centred, rounded", async () => {
     const el = await sidebar(true);
     const css = [...el.querySelectorAll("style")].map((s) => s.textContent).join("");
-    expect(css).toMatch(/\[data-focused\]\s*\{[^}]*inset 0 2px 0 #4a9eff/);
+    expectFocusLine(css, ".sidebar-tab");
   });
 });

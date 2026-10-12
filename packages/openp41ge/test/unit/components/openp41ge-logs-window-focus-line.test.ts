@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Openp41geLogsWindow } from "../../../src/renderer/components/openp41ge-logs-window";
 import { _resetLogStreams } from "openp41ge-core-logger";
+import { expectFocusLine } from "../../../../openp41ge-sdk-uikit/test/components/tabs/focus-line-expect";
 
 type Lw = Openp41geLogsWindow & { _sidebarOpen: boolean };
 
@@ -89,5 +90,16 @@ describe("Logs window focus line", () => {
     el._sidebarOpen = false;
     await el.updateComplete;
     expect(grid(el).focusVisible).toBe(true);
+  });
+
+  it("draws the focus line on the sidebar's tabs: half the tab's width, centred, rounded", async () => {
+    const el = await mount();
+    const css =
+      [...root(el).querySelectorAll("style")].map((s) => s.textContent).join("") +
+      [...(root(el) as ShadowRoot).adoptedStyleSheets ?? []]
+        .flatMap((sheet) => [...sheet.cssRules].map((r) => r.cssText))
+        .join("") +
+      String((Openp41geLogsWindow as unknown as { styles?: { cssText?: string } }).styles?.cssText ?? "");
+    expectFocusLine(css, ".lw-sb-tab");
   });
 });
