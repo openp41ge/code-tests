@@ -123,6 +123,8 @@ describe("release view", () => {
 describe("release grid tab", () => {
   test("is an app type whose tab is keyed by the release's tag", () => {
     expect(releaseAppRegistration.id).toBe(RELEASE_APP_TYPE);
+    // The package icon, following the tab's text colour.
+    expect(releaseAppRegistration.icon).toMatch(/^<svg[^>]*fill="currentColor"[^>]*>.*M440-183v-274L200-596/);
     const calls: unknown[][] = [];
     openReleaseTab({ openApp: (...args: unknown[]) => calls.push(args) }, "v0.1.0-alpha.8", true);
     expect(calls).toEqual([
