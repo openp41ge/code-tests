@@ -16,6 +16,13 @@ import {
   resolveAppDataDir,
 } from "../../../src/main/services/app-data-dir";
 
+describe("storage names", () => {
+  test("the data folders are named for openp41ge code", () => {
+    expect(APP_DATA_DIR_PRODUCTION).toBe(".openp41ge-code");
+    expect(APP_DATA_DIR_DEV).toBe(".openp41ge-code-dev");
+  });
+});
+
 describe("appDataDirName", () => {
   test("packaged release uses the production folder", () => {
     expect(appDataDirName(true)).toBe(APP_DATA_DIR_PRODUCTION);
@@ -27,12 +34,12 @@ describe("appDataDirName", () => {
 });
 
 describe("chromiumProfileDirName", () => {
-  test("packaged release keeps the original Chromium profile folder", () => {
-    expect(chromiumProfileDirName(true)).toBe("openp41ge");
+  test("packaged release's Chromium profile folder is the app's name", () => {
+    expect(chromiumProfileDirName(true)).toBe("openp41ge code");
   });
 
   test("dev build has its own Chromium profile folder, so it never holds the release's storage locks", () => {
-    expect(chromiumProfileDirName(false)).toBe("openp41ge-dev");
+    expect(chromiumProfileDirName(false)).toBe("openp41ge code development");
   });
 });
 
