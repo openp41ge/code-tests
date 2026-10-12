@@ -1,22 +1,21 @@
 /**
- * The focus line rule every tab bar's styles must contain (see focus-line.ts):
- * shared by the toolkit's and the platform's focus line tests.
+ * Where the focus line is (see focus-line.ts): shared by the toolkit's and
+ * the platform's focus line tests. The line is one element per document,
+ * drawn over the focused tab.
  */
 import { expect } from "vitest";
+import { focusLineLayer } from "../../../src/components/tabs/focus-line";
 
-/** The focus line rule for `tab`, as every tab bar's styles must contain it. */
-export function expectFocusLine(css: string, tab: string): void {
-  const esc = tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const rule = new RegExp(`${esc}\\[data-focused\\]::after\\s*\\{([^}]*)\\}`).exec(css);
-  expect(rule, `${tab}[data-focused]::after rule`).not.toBeNull();
-  const body = rule![1];
-  expect(body).toMatch(/position:\s*absolute/);
-  expect(body).toMatch(/top:\s*0/);
-  expect(body).toMatch(/left:\s*25%/);
-  expect(body).toMatch(/width:\s*50%/);
-  expect(body).toMatch(/height:\s*3px/);
-  expect(body).toMatch(/border-radius:\s*\dpx/);
-  expect(body).toMatch(/background:\s*#4a9eff/);
-  expect(css).toMatch(new RegExp(`${esc}\\s*\\{[^}]*position:\\s*relative`));
-  expect(css).not.toMatch(/inset 0 2px 0/);
+/** The focus line is over `tab` (where it is drawn, from the tab's rect, is
+ *  covered by focus-line.test.ts; jsdom lays nothing out). */
+export function expectFocusLineOn(tab: Element | null): void {
+  expect(tab, "the focused tab").not.toBeNull();
+  expect(focusLineLayer().target).toBe(tab);
+}
+
+/** No focus line is shown. */
+export function expectNoFocusLine(): void {
+  const layer = focusLineLayer();
+  expect(layer.target).toBeNull();
+  expect(layer.element.style.display).toBe("none");
 }

@@ -1,12 +1,12 @@
 // @ts-nocheck
 /**
  * <tab-bar>: the focused tab (the active tab of the focused cell's bar) has a
- * blue line across its top edge (half its width, centred, rounded). Other tabs, and the active tab of a bar
+ * blue line floating over its top edge (see focus-line.test.ts). Other tabs, and the active tab of a bar
  * that is not focused, do not.
  */
 import { describe, test, expect, afterEach } from "vitest";
 import "../../../src/components/tabs/tab-bar";
-import { expectFocusLine } from "./focus-line-expect";
+import { expectFocusLineOn, expectNoFocusLine } from "./focus-line-expect";
 
 async function bar(focused) {
   const el = document.createElement("tab-bar");
@@ -35,10 +35,11 @@ describe("tab-bar focused line", () => {
     expect(root.querySelector("[data-focused]")).toBeNull();
   });
 
-  test("draws the focus line: half the tab's width, centred, rounded", async () => {
+  test("shows the focus line over the focused tab, and none when the bar is not focused", async () => {
     const root = await bar(true);
-    // jsdom does not resolve shadow-root style rules, so assert the rule itself.
-    const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("");
-    expectFocusLine(css, ".tab-btn");
+    expectFocusLineOn(root.querySelector('[data-tab-id="a"]'));
+    document.body.innerHTML = "";
+    await bar(false);
+    expectNoFocusLine();
   });
 });

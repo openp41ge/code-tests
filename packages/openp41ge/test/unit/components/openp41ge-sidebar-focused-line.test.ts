@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, afterEach } from "vitest";
 import "../../../src/renderer/components/openp41ge-sidebar";
-import { expectFocusLine } from "../../../../openp41ge-sdk-uikit/test/components/tabs/focus-line-expect";
+import { expectFocusLineOn, expectNoFocusLine } from "../../../../openp41ge-sdk-uikit/test/components/tabs/focus-line-expect";
 
 type Sidebar = HTMLElement & {
   side: string;
@@ -49,9 +49,11 @@ describe("sidebar focused line", () => {
     expect(el.querySelector("[data-focused]")).toBeNull();
   });
 
-  it("draws the focus line: half the tab's width, centred, rounded", async () => {
+  it("shows the focus line over the focused tab, and none when the sidebar is not focused", async () => {
     const el = await sidebar(true);
-    const css = [...el.querySelectorAll("style")].map((s) => s.textContent).join("");
-    expectFocusLine(css, ".sidebar-tab");
+    expectFocusLineOn(el.querySelector('[data-sidebar-tab-id="a"]'));
+    el.focused = false;
+    await el.updateComplete;
+    expectNoFocusLine();
   });
 });
