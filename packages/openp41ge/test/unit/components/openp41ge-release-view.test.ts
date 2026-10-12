@@ -68,7 +68,7 @@ describe("release view", () => {
       "v0.1.0-alpha.8",
     );
     expect(button(installed, "Download")).toBeUndefined();
-    expect(root(installed).textContent).toContain("Installed");
+    expect(root(installed).querySelector(".rv-chip")?.textContent).toBe("Current");
   });
 
   test("Download shows Downloading… at once, then progress, then Update", async () => {

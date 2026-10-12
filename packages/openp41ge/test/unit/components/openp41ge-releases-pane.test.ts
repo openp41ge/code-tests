@@ -93,10 +93,12 @@ describe("releases pane", () => {
     expect(root(el).querySelector(".rp-state--error")?.textContent).toContain("Couldn't check for releases");
   });
 
-  test("marks the installed release", async () => {
+  test("marks the installed release with a Current pill, not a version in the bottom bar", async () => {
     const el = await mount(fakeReleases({ installed: "0.1.0-alpha.7" }));
-    const installed = rows(el).filter((r) => r.querySelector(".rp-chip--installed"));
-    expect(installed.map((r) => r.dataset.tag)).toEqual(["v0.1.0-alpha.7"]);
+    const current = rows(el).filter((r) => r.querySelector(".rp-chip--current"));
+    expect(current.map((r) => r.dataset.tag)).toEqual(["v0.1.0-alpha.7"]);
+    expect(current[0].querySelector(".rp-chip--current")!.textContent).toBe("Current");
+    expect(root(el).querySelector(".rp-footer")!.textContent).not.toContain("0.1.0-alpha.7");
   });
 
   test("renders release text as text, not markup", async () => {
