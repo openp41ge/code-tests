@@ -12,6 +12,7 @@ import {
   APP_DATA_DIR_PRODUCTION,
   APP_DATA_DIR_DEV,
   appDataDirName,
+  chromiumProfileDirName,
   resolveAppDataDir,
 } from "../../../src/main/services/app-data-dir";
 
@@ -22,6 +23,16 @@ describe("appDataDirName", () => {
 
   test("dev build uses the -dev folder", () => {
     expect(appDataDirName(false)).toBe(APP_DATA_DIR_DEV);
+  });
+});
+
+describe("chromiumProfileDirName", () => {
+  test("packaged release keeps the original Chromium profile folder", () => {
+    expect(chromiumProfileDirName(true)).toBe("openp41ge");
+  });
+
+  test("dev build has its own Chromium profile folder, so it never holds the release's storage locks", () => {
+    expect(chromiumProfileDirName(false)).toBe("openp41ge-dev");
   });
 });
 
