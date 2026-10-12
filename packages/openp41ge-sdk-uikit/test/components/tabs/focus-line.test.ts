@@ -5,9 +5,10 @@
  * scroll, and would clip it): fixed, on the document's body. It follows the
  * tab as anything around it scrolls, and is clipped to the visible part of
  * the tab bar (hidden when the tab is scrolled out of it). The tab bar that
- * shows it is its owner; another owner's hide does not remove it.
+ * shows it is its owner; another owner's hide does not remove it. It is
+ * never shown while its window is not focused (each window has its own).
  */
-import { describe, test, expect, afterEach } from "vitest";
+import { describe, test, expect, afterEach, beforeEach } from "vitest";
 import { focusLineLayer } from "../../../src/components/tabs/focus-line";
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -36,6 +37,11 @@ function setup() {
 
 const style = () => focusLineLayer().element.style;
 const owner = {};
+
+beforeEach(() => {
+  focusLineLayer(); // it follows focus changes from when it exists
+  window.dispatchEvent(new Event("focus"));
+});
 
 afterEach(() => {
   focusLineLayer().hide(owner);
@@ -88,5 +94,15 @@ describe("focus line", () => {
     layer.hide(owner);
     expect(layer.target).toBeNull();
     expect(style().display).toBe("none");
+  });
+
+  test("is hidden while its window is not focused", () => {
+    const { tab } = setup();
+    focusLineLayer().show(tab, owner);
+    window.dispatchEvent(new Event("blur"));
+    expect(style().display).toBe("none");
+    expect(focusLineLayer().target).toBe(tab);
+    window.dispatchEvent(new Event("focus"));
+    expect(style().display).not.toBe("none");
   });
 });
