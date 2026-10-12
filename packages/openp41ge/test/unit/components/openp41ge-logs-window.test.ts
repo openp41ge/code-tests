@@ -595,7 +595,7 @@ describe("openp41ge-logs-window", () => {
     // Workspace-style tab chrome (close affordance + tab label).
     const tab = sr.querySelector<HTMLElement>('[data-testid="lw-sbtab-streams"]');
     expect(tab!.querySelector(".lw-sb-tab-label")?.textContent?.trim()).toBe("Streams");
-    expect(tab!.querySelector(".lw-sb-tab-close")).toBeTruthy();
+    expect(tab!.querySelector(".lw-sb-tab-close")?.tagName).toBe("TAB-CLOSE");
     expect(tab!.querySelector(".lw-sb-add")).toBeNull();
     el.remove();
   });

@@ -984,6 +984,8 @@ describe("Openp41geWindowManager tab closure + grid surface", () => {
       '[data-manager-tab="workspaces"] .wm-tab-close',
     )!;
     expect(closeBtn).not.toBeNull();
+    // The toolkit's close button, as on every tab handle.
+    expect(closeBtn.tagName).toBe("TAB-CLOSE");
     closeBtn.click();
     await (wm as Wm).updateComplete;
     expect(wm._openTabs).toEqual(["settings"]);
