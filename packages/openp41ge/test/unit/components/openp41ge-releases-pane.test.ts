@@ -126,4 +126,18 @@ describe("releases pane", () => {
     root(el).querySelector<HTMLButtonElement>('[aria-label="Check for releases"]')!.click();
     expect(fake.deps.refreshReleases).toHaveBeenCalled();
   });
+
+  test("while a check runs, the refresh button shows it (busy), not a Checking label", async () => {
+    const fake = fakeReleases();
+    const el = await mount(fake);
+    const refresh = () => root(el).querySelector<HTMLButtonElement>('[aria-label="Check for releases"]')!;
+    expect(refresh().getAttribute("aria-busy")).toBe("false");
+    fake.push({ checking: true });
+    await el.updateComplete;
+    expect(refresh().getAttribute("aria-busy")).toBe("true");
+    expect(root(el).querySelector(".rp-footer")!.textContent).not.toContain("Checking");
+    fake.push({ checking: false });
+    await el.updateComplete;
+    expect(refresh().getAttribute("aria-busy")).toBe("false");
+  });
 });
