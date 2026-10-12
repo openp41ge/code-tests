@@ -41,3 +41,17 @@ describe("tab-bar focused line", () => {
     expect(css).toMatch(/\[data-focused\]\s*\{[^}]*inset 0 2px 0 (#4a9eff|rgb\(74,\s*158,\s*255\))/);
   });
 });
+
+describe("tab-bar focused line and the close button", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  test("the focused tab's close button draws the line too, over its hover background", async () => {
+    const root = await bar(true);
+    const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("");
+    expect(css).toMatch(
+      /\[data-focused\]\s+\.tab-close\s*\{[^}]*inset 0 2px 0 (#4a9eff|rgb\(74,\s*158,\s*255\))/,
+    );
+  });
+});
