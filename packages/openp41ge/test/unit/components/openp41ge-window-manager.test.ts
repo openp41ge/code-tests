@@ -1035,6 +1035,16 @@ describe("Openp41geWindowManager tab closure + grid surface", () => {
     expect(icon!.getAttribute("fill")).toBe("currentColor");
   });
 
+  it("shows the Releases tab's icon on its tab handle", async () => {
+    wm._openTabs = ["workspaces", "releases"];
+    wm._activeTab = "workspaces";
+    await (wm as Wm).updateComplete;
+    const icon = wm.shadowRoot!.querySelector('[data-manager-tab="releases"] .wm-tab-icon svg');
+    expect(icon).not.toBeNull();
+    expect(icon!.getAttribute("fill")).toBe("currentColor");
+    expect(icon!.querySelector("path")!.getAttribute("d")).toMatch(/^m720-80 120-120/);
+  });
+
   it("offers a Migrations tab in the + menu, which shows the migrations pane", async () => {
     await (wm as Wm).updateComplete;
     wm.shadowRoot!.querySelector<HTMLElement>(".wm-tabbar-add")!.click();
