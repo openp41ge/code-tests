@@ -14,6 +14,7 @@ import {
   appDataDirName,
   chromiumProfileDirName,
   resolveChromiumProfileDir,
+  crashReportsDir,
   resolveAppDataDir,
 } from "../../../src/main/services/app-data-dir";
 
@@ -100,5 +101,11 @@ describe("resolveChromiumProfileDir", () => {
     process.env.OPENP41GE_DIR = "/tmp/throwaway";
     expect(resolveChromiumProfileDir(true, "/AppData")).toBe(path.join("/tmp/throwaway", "chromium-profile"));
     expect(resolveChromiumProfileDir(false, "/AppData")).toBe(path.join("/tmp/throwaway", "chromium-profile"));
+  });
+});
+
+describe("crashReportsDir", () => {
+  test("crash reports live in the Chromium profile folder, not a folder of their own", () => {
+    expect(crashReportsDir("/AppData/openp41ge code")).toBe(path.join("/AppData/openp41ge code", "Crashpad"));
   });
 });
