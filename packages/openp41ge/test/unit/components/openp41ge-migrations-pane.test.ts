@@ -1,7 +1,8 @@
 /**
  * <openp41ge-migrations-pane>, the manager window's Migrations tab: the data
- * version, the last failure, and each data migration that ran (newest first)
- * with when and what it did. Read-only.
+ * version next to the app's, whether the data is up to date (or the last
+ * update couldn't be finished, with where to get the app again), and how many
+ * updates ran and when the last did. Never what they were. Read-only.
  */
 import { describe, test, expect, afterEach, vi } from "vitest";
 import {
@@ -10,18 +11,11 @@ import {
 } from "../../../src/renderer/components/openp41ge-migrations-pane";
 
 const STATUS = {
-  appVersion: "0.1.0-alpha.11",
-  dataVersion: "0.1.0-alpha.11",
-  applied: [
-    {
-      id: "2026-10-09-chats",
-      description: "Move chats",
-      at: "2026-10-10T09:00:00.000Z",
-      done: ["move a → b"],
-    },
-    { id: "2026-10-10-repos", at: "2026-10-10T09:00:01.000Z", done: [] },
-  ],
-  failed: { id: "2026-11-x", at: "2026-10-11T09:00:00.000Z", error: "x exists" },
+  appVersion: "0.1.0-alpha.12",
+  dataVersion: "0.1.0-alpha.12",
+  updates: 3,
+  lastUpdateAt: "2026-10-10T09:00:01.000Z",
+  failed: false,
 };
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -37,9 +31,6 @@ async function mount(status: unknown): Promise<Openp41geMigrationsPane> {
 
 const $ = (el: Openp41geMigrationsPane, sel: string) =>
   el.shadowRoot!.querySelector<HTMLElement>(sel);
-const $$ = (el: Openp41geMigrationsPane, sel: string) => [
-  ...el.shadowRoot!.querySelectorAll<HTMLElement>(sel),
-];
 
 describe("openp41ge-migrations-pane", () => {
   afterEach(() => {
@@ -48,29 +39,26 @@ describe("openp41ge-migrations-pane", () => {
 
   test("shows the data version and the app's", async () => {
     const el = await mount(STATUS);
-    expect($(el, ".mp-versions")?.textContent).toContain("Data version 0.1.0-alpha.11");
-    expect($(el, ".mp-versions")?.textContent).toContain("App 0.1.0-alpha.11");
+    expect($(el, ".mp-versions")?.textContent).toContain("Data version 0.1.0-alpha.12");
+    expect($(el, ".mp-versions")?.textContent).toContain("App 0.1.0-alpha.12");
   });
 
-  test("lists what ran, newest first, by description (else id), with what it did", async () => {
+  test("says the data is up to date, and how many updates ran", async () => {
     const el = await mount(STATUS);
-    const items = $$(el, ".mp-item:not(.mp-item--failed)");
-    expect(items.map((i) => i.querySelector(".mp-title")?.textContent)).toEqual([
-      "2026-10-10-repos",
-      "Move chats",
-    ]);
-    expect(items[1].textContent).toContain("move a → b");
-    expect(items[1].textContent).toContain("2026-10-09-chats");
+    expect($(el, ".mp-state")?.textContent).toContain("Your data is up to date");
+    expect($(el, ".mp-state")?.textContent).toContain("3 data updates");
+    expect(el.shadowRoot!.querySelector(".mp-item")).toBeNull();
   });
 
-  test("shows the last failure", async () => {
-    const el = await mount(STATUS);
-    expect($(el, ".mp-item--failed")?.textContent).toContain("x exists");
+  test("a failed update: says so and where to get the app again", async () => {
+    const el = await mount({ ...STATUS, failed: true });
+    expect($(el, ".mp-state")?.textContent).toContain("couldn't be finished");
+    expect($(el, ".mp-state")?.textContent).toContain("GitHub");
   });
 
   test("says when nothing has run", async () => {
-    const el = await mount({ appVersion: "0.1.0", applied: [] });
-    expect($(el, ".mp-state")?.textContent).toContain("No data migrations have run");
+    const el = await mount({ appVersion: "0.1.0", updates: 0, failed: false });
+    expect($(el, ".mp-state")?.textContent).toContain("No data updates have run");
     expect($(el, ".mp-versions")?.textContent).toContain("Data version not recorded");
   });
 });

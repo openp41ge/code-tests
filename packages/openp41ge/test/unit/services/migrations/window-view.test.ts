@@ -4,7 +4,7 @@
  * the journal and the logs).
  */
 import { describe, it, expect } from "vitest";
-import { toWindowView } from "../../../../src/main/services/migrations/window-view";
+import { toWindowView, migrationsSummary } from "../../../../src/main/services/migrations/window-view";
 
 const rows = [
   { id: "a", description: "Move repositories", state: "done" as const },
@@ -39,6 +39,39 @@ describe("toWindowView", () => {
       completed: 0,
       total: 0,
       dataVersion: "0.3.0",
+    });
+  });
+});
+
+describe("migrationsSummary (the manager window's Migrations tab)", () => {
+  const journal = {
+    applied: [
+      { id: "a", description: "Move chats", at: "2026-10-10T09:00:00.000Z", done: ["move /Users/u/x → y"] },
+      { id: "b", at: "2026-10-10T09:00:01.000Z", done: [] },
+    ],
+    failed: { id: "c", at: "2026-10-11T09:00:00.000Z", error: "ENOTDIR /Users/u/z" },
+  };
+
+  it("counts the updates, the last one's time, and whether one failed", () => {
+    expect(migrationsSummary(journal, "0.1.0-alpha.12", "0.1.0-alpha.11")).toEqual({
+      appVersion: "0.1.0-alpha.12",
+      dataVersion: "0.1.0-alpha.11",
+      updates: 2,
+      lastUpdateAt: "2026-10-10T09:00:01.000Z",
+      failed: true,
+    });
+  });
+
+  it("sends no ids, descriptions, what they did or errors", () => {
+    const sent = JSON.stringify(migrationsSummary(journal, "1", "1"));
+    for (const hidden of ["Move chats", "/Users/u", "ENOTDIR", '"a"', '"c"']) expect(sent).not.toContain(hidden);
+  });
+
+  it("nothing ran: no count, no time, not failed", () => {
+    expect(migrationsSummary({ applied: [] }, "0.1.0", undefined)).toEqual({
+      appVersion: "0.1.0",
+      updates: 0,
+      failed: false,
     });
   });
 });
