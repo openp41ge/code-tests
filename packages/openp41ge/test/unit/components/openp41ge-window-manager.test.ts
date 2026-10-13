@@ -432,21 +432,21 @@ describe("Openp41geWindowManager workspace row thumbnails", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("opens the workspace window via the row's open-window button", async () => {
+  it("has no open-window button on the row (it is in the workspace editor)", async () => {
     setWorkspace(1);
     await (wm as Wm).updateComplete;
 
-    const btn = wm.shadowRoot?.querySelector<HTMLElement>(".ws-open-btn");
-    expect(btn).not.toBeNull();
-    btn?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    expect(wm.shadowRoot?.querySelector(".ws-row")).not.toBeNull();
+    expect(wm.shadowRoot?.querySelector(".ws-open-btn")).toBeNull();
+    expect(wm.shadowRoot?.querySelector('[aria-label="Open workspace window"]')).toBeNull();
+  });
 
-    expect(
-      (
-        window as unknown as {
-          openp41ge: { windowManager: { openWorkspaceWindow: ReturnType<typeof vi.fn> } };
-        }
-      ).openp41ge.windowManager.openWorkspaceWindow,
-    ).toHaveBeenCalledWith("/w/a");
+  it("pads workspace rows like the Releases tab's rows (7px 10px)", async () => {
+    await (wm as Wm).updateComplete;
+    const css = [...(wm.shadowRoot?.querySelectorAll("style") ?? [])]
+      .map((s) => s.textContent ?? "")
+      .join("\n");
+    expect(css).toMatch(/li\.ws-row\s*\{[^}]*padding:\s*7px 10px;/);
   });
 
   it("no longer opens the workspace window on a row double-click", async () => {

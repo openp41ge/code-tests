@@ -68,8 +68,24 @@ function setup(gitOverrides: Partial<WorkspaceActionsGit> = {}) {
     save: vi.fn(async () => undefined),
   };
   const confirm = vi.fn(async () => true);
-  return { clone, git, store, confirm, actions: createWorkspaceActions(() => git, store, confirm) };
+  const openWindow = vi.fn();
+  return {
+    clone,
+    git,
+    store,
+    confirm,
+    openWindow,
+    actions: createWorkspaceActions(() => git, store, confirm, openWindow),
+  };
 }
+
+describe("openWindow", () => {
+  it("opens (or focuses) the workspace file's window", () => {
+    const { actions, openWindow } = setup();
+    actions.openWindow("/ws/a.openp41ge-workspace");
+    expect(openWindow).toHaveBeenCalledWith("/ws/a.openp41ge-workspace");
+  });
+});
 
 describe("addRepository", () => {
   it("clones, records the repo in the open workspace, saves, and reports its name", async () => {
@@ -159,6 +175,7 @@ describe("addRepository", () => {
       () => undefined,
       store,
       async () => true,
+      vi.fn(),
     );
     await expect(actions.addRepository("https://example.com/app.git").done).resolves.toMatchObject({
       ok: false,
@@ -463,6 +480,7 @@ describe("onWorkspaceFileChanged", () => {
       () => undefined,
       {} as WorkspaceActionsStore,
       vi.fn(async () => true),
+      vi.fn(),
     );
     expect(() => actions.onWorkspaceFileChanged(() => undefined)()).not.toThrow();
   });
