@@ -68,13 +68,13 @@ describe("planStartupMigrations — release builds", () => {
     expect(readDataVersion(root)).toBe("0.2.0");
   });
 
-  it("refuses to start when the download lacks a required set (never opens on the old layout)", async () => {
+  it("refuses to start when the download lacks a required set (never opens on the old layout); not an offline problem", async () => {
     withData();
     writeDataVersion(root, "0.1.0");
     const deps = release(async () => ({ ok: true, sets: [set("b")] }), ["a", "b"]);
     const plan = await planStartupMigrations(deps);
-    expect(plan).toMatchObject({ kind: "offline" });
-    expect(plan.kind === "offline" && plan.error).toMatch(/\ba\b/);
+    expect(plan).toMatchObject({ kind: "missing" });
+    expect(plan.kind === "missing" && plan.error).toMatch(/\ba\b/);
     expect(readDataVersion(root)).toBe("0.1.0");
   });
 

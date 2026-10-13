@@ -43,6 +43,22 @@ describe("toWindowView", () => {
   });
 });
 
+describe("toWindowView: what an offline download needs", () => {
+  it("sends the requirements while offline", () => {
+    const requirements = { internet: true, github: "rate-limited" as const, githubResetAt: 1_760_000_000_000 };
+    expect(toWindowView({ phase: "offline", rows: [], error: "x", requirements })).toEqual({
+      phase: "offline",
+      completed: 0,
+      total: 0,
+      requirements,
+    });
+  });
+
+  it("a release without an update this version needs is a failed update", () => {
+    expect(toWindowView({ phase: "failed", rows: [] })).toEqual({ phase: "failed", completed: 0, total: 0 });
+  });
+});
+
 describe("migrationsSummary (the manager window's Migrations tab)", () => {
   const journal = {
     applied: [
