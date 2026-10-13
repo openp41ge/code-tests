@@ -1,6 +1,7 @@
 /**
  * <openp41ge-release-view>, a release's grid tab (`release`, `{ tag }`): its
- * tag, channel, date, notes (as text) and a link to it on GitHub. The build
+ * tag, channel, date, notes (as text) and View on GitHub (a bordered button
+ * with the logo, first, so the download controls never move it). The build
  * the updater can install (the latest of the update channel) offers
  * Download; clicking it shows "Downloading…" at once (the updater may first
  * check again, and some downloads send no progress), then the progress, then
@@ -99,6 +100,37 @@ describe("release view", () => {
     button(el, "Update")!.click();
     await tick();
     expect(fake.deps.quitAndInstall).toHaveBeenCalled();
+  });
+
+  test("View on GitHub is a bordered button with the GitHub logo, first, in every download state", async () => {
+    let finish!: (s: UpdaterStatus) => void;
+    const fake = fakeReleases({ download: () => new Promise((r) => (finish = r)) });
+    const el = await mount(fake, "v0.1.0-alpha.8");
+    const first = () => root(el).querySelector(".rv-actions")!.firstElementChild as HTMLElement;
+    const github = () => root(el).querySelector<HTMLAnchorElement>("a.rv-github")!;
+    expect(github().classList.contains("rv-btn")).toBe(true);
+    expect(github().querySelector("svg")).not.toBeNull();
+    expect(github().textContent?.trim()).toBe("View on GitHub");
+    expect(first()).toBe(github());
+
+    button(el, "Download")!.click();
+    await el.updateComplete;
+    expect(first()).toBe(github());
+    fake.emitStatus({
+      state: "downloading",
+      version: "0.1.0-alpha.8",
+      progress: 42,
+      bytesPerSecond: 1,
+      transferred: 42,
+      total: 100,
+    });
+    await el.updateComplete;
+    expect(first()).toBe(github());
+    fake.emitStatus({ state: "update-downloaded", version: "0.1.0-alpha.8" });
+    finish({ state: "update-downloaded", version: "0.1.0-alpha.8" });
+    await tick();
+    await el.updateComplete;
+    expect(first()).toBe(github());
   });
 
   test("a failed download shows the error and offers Download again", async () => {
