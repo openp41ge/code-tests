@@ -4,9 +4,9 @@
  * downloading the app again from GitHub (Download / Quit); offline and a
  * failed check say so plainly, with Quit / Continue. Offline, a checklist
  * shows what the download needs (internet, GitHub), and Continue is
- * disabled until every item is met. Otherwise the status is on the right of
- * the top bar (red / green). The bottom bar holds only buttons, each with
- * the app's tooltip.
+ * disabled until every item is met. Otherwise the status is right below
+ * the text (red / green); the top bar holds only the title. The bottom bar
+ * holds only buttons, each with the app's tooltip.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { tooltipController } from "openp41ge-sdk-uikit";
@@ -151,10 +151,15 @@ describe("renderMigrations — offline: what the download needs", () => {
   });
 });
 
-describe("renderMigrations — top bar status and buttons", () => {
-  const status = (root: HTMLElement) => root.querySelector<HTMLElement>(".mg-titlebar .mg-status");
+describe("renderMigrations — status and buttons", () => {
+  const status = (root: HTMLElement) => root.querySelector<HTMLElement>(".mg-body .mg-status");
 
-  it("the status is in the top bar, coloured; the bottom bar has only buttons", () => {
+  it("the status is right below the text, coloured; not in the top bar; the bottom bar has only buttons", () => {
+    for (const phase of ["checking", "running", "done", "failed", "error", "newer"] as const) {
+      const r = setup({ phase, completed: 1, total: 3 }).root;
+      expect(r.querySelector(".mg-titlebar .mg-status")).toBeNull();
+      expect(r.querySelector(".mg-intro")?.nextElementSibling?.classList.contains("mg-status")).toBe(true);
+    }
     const failed = setup({ phase: "failed", completed: 1, total: 3 }).root;
     expect(status(failed)?.textContent).toBe("Update failed");
     expect(status(failed)?.classList.contains("mg-status--bad")).toBe(true);
