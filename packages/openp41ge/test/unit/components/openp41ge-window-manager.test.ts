@@ -975,6 +975,45 @@ describe("Openp41geWindowManager tab closure + grid surface", () => {
     wm.remove();
   });
 
+  it("the + stays fixed at the end of the bar: only the tabs scroll, behind it", async () => {
+    wm._openTabs = ["workspaces", "settings", "releases"];
+    wm._activeTab = "workspaces";
+    await (wm as Wm).updateComplete;
+    const sr = wm.shadowRoot!;
+    const bar = sr.querySelector<HTMLElement>(".wm-tabbar")!;
+    const strip = bar.querySelector<HTMLElement>(".wm-tabbar-scroll")!;
+    expect(strip).not.toBeNull();
+    expect(strip.querySelectorAll(".wm-tab")).toHaveLength(3);
+    const add = sr.querySelector<HTMLElement>(".wm-tabbar-add")!;
+    expect(add.parentElement).toBe(bar);
+    expect(strip.contains(add)).toBe(false);
+  });
+
+  it("tabs fade at an edge they are scrolled past (as the workspace window's sidebars)", async () => {
+    wm._openTabs = ["workspaces", "settings", "releases"];
+    wm._activeTab = "workspaces";
+    await (wm as Wm).updateComplete;
+    const sr = wm.shadowRoot!;
+    const strip = sr.querySelector<HTMLElement>(".wm-tabbar-scroll")!;
+    const fade = (side: string) => sr.querySelector<HTMLElement>(`.wm-tabbar-fade--${side}`)!;
+    expect(fade("left").hasAttribute("data-shown")).toBe(false);
+    expect(fade("right").hasAttribute("data-shown")).toBe(false);
+
+    Object.defineProperty(strip, "scrollWidth", { value: 500, configurable: true });
+    Object.defineProperty(strip, "clientWidth", { value: 200, configurable: true });
+    strip.scrollLeft = 0;
+    strip.dispatchEvent(new Event("scroll"));
+    await (wm as Wm).updateComplete;
+    expect(fade("left").hasAttribute("data-shown")).toBe(false);
+    expect(fade("right").hasAttribute("data-shown")).toBe(true);
+
+    strip.scrollLeft = 300;
+    strip.dispatchEvent(new Event("scroll"));
+    await (wm as Wm).updateComplete;
+    expect(fade("left").hasAttribute("data-shown")).toBe(true);
+    expect(fade("right").hasAttribute("data-shown")).toBe(false);
+  });
+
   it("closes the Workspaces tab when another tab remains open", async () => {
     wm._openTabs = ["workspaces", "settings"];
     wm._activeTab = "workspaces";
