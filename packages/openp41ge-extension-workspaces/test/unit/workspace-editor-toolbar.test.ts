@@ -56,6 +56,12 @@ describe("workspace editor toolbar", () => {
     });
   }
 
+  it("the buttons sit at the right of the row", () => {
+    const { container } = mount("ui");
+    const css = [...container.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+    expect(css).toMatch(/\.we-toolbar\s*\{[^}]*justify-content:\s*flex-end;/);
+  });
+
   it("Open opens the edited workspace's window", () => {
     const { container, openWindow } = mount("ui");
     container.querySelector<HTMLElement>('[data-action="open-window"]')!.click();
