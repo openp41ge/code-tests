@@ -5,7 +5,8 @@
  * document listener's `e.target` is the outermost host, so the drag system
  * finds the pressed tab through the event's composed path. A press on a tab's
  * close button is not a drag, and the Logs window (which drags its own tabs)
- * is left alone. A manager grid tab dropped outside its window is cancelled:
+ * is left alone, as is a press inside a tab's content (its pane carries the
+ * tab id too): it must still focus inputs. A manager grid tab dropped outside its window is cancelled:
  * it is not a workspace tab, so it is never detached into a workspace window.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -93,6 +94,22 @@ describe("manager grid tab drags", () => {
   it("leaves tabs of a window that drags its own (the Logs window) alone", async () => {
     const bar = await managerBar("data-own-tab-drags");
     press(bar.querySelector('[data-tab-id="t1"]')!);
+    expect(hooks().getCurrentDragSourceType()).toBeNull();
+  });
+
+  it("a press inside a tab's content (also marked with its tab id) is left alone: inputs there take focus", async () => {
+    // The tab's content pane carries data-tab-id too, but is not in a tab bar.
+    const pane = document.createElement("div");
+    pane.className = "tab-content-pane";
+    pane.setAttribute("data-tab-id", "t1");
+    const host = document.createElement("div");
+    pane.appendChild(host);
+    const input = document.createElement("input");
+    host.attachShadow({ mode: "open" }).appendChild(input);
+    document.body.appendChild(pane);
+    const event = new MouseEvent("mousedown", { bubbles: true, composed: true, cancelable: true, button: 0 });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
     expect(hooks().getCurrentDragSourceType()).toBeNull();
   });
 
