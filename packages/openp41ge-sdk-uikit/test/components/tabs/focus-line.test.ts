@@ -1,6 +1,7 @@
 /**
  * The focus line: one element per document, over the focused tab handle. It
- * floats half above the tab — a 3px bar, half the tab's width and centred,
+ * floats half above the tab — a 3px bar, half the tab's width (at most 50px)
+ * and centred,
  * straddling the tab's top edge — so it is drawn outside the tab bars (which
  * scroll, and would clip it): fixed, on the document's body. It follows the
  * tab as anything around it scrolls, and is clipped to the visible part of
@@ -49,19 +50,27 @@ afterEach(() => {
 });
 
 describe("focus line", () => {
-  test("floats half above the focused tab: half its width, centred, 3px, rounded", () => {
+  test("floats half above the focused tab: half its width up to 50px, centred, 3px, rounded", () => {
     const { tab } = setup();
     focusLineLayer().show(tab, owner);
     const el = focusLineLayer().element;
     expect(el.parentElement).toBe(document.body);
     expect(style().position).toBe("fixed");
     expect(style().pointerEvents).toBe("none");
-    expect(style().left).toBe("130px");
-    expect(style().width).toBe("60px");
+    expect(style().left).toBe("135px");
+    expect(style().width).toBe("50px");
     expect(style().top).toBe("38.5px");
     expect(style().height).toBe("3px");
     expect(style().borderRadius).not.toBe("");
     expect(style().background).toMatch(/#4a9eff|rgb\(74, 158, 255\)/);
+  });
+
+  test("a narrow tab's line is half its width", () => {
+    const { tab, moveTab } = setup();
+    moveTab(rect(100, 40, 80, 34));
+    focusLineLayer().show(tab, owner);
+    expect(style().left).toBe("120px");
+    expect(style().width).toBe("40px");
   });
 
   test("follows the tab when something around it scrolls", () => {
@@ -69,20 +78,20 @@ describe("focus line", () => {
     focusLineLayer().show(tab, owner);
     moveTab(rect(20, 40, 120, 34));
     bar.dispatchEvent(new Event("scroll"));
-    expect(style().left).toBe("50px");
+    expect(style().left).toBe("55px");
   });
 
   test("is clipped to the visible part of the tab bar, and hidden when the tab is out of it", () => {
     const { bar, tab, moveTab } = setup();
     focusLineLayer().show(tab, owner);
-    moveTab(rect(-100, 40, 120, 34)); // line would be -70..-10: out of the bar
+    moveTab(rect(-100, 40, 120, 34)); // line would be -65..-15: out of the bar
     bar.dispatchEvent(new Event("scroll"));
     expect(style().display).toBe("none");
-    moveTab(rect(-40, 40, 120, 34)); // line -10..50 → 0..50
+    moveTab(rect(-40, 40, 120, 34)); // line -5..45 → 0..45
     bar.dispatchEvent(new Event("scroll"));
     expect(style().display).not.toBe("none");
     expect(style().left).toBe("0px");
-    expect(style().width).toBe("50px");
+    expect(style().width).toBe("45px");
   });
 
   test("is removed by its owner, not by another", () => {
