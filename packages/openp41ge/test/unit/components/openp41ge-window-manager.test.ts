@@ -1184,3 +1184,42 @@ describe("Openp41geWindowManager Cleanup dot", () => {
     expect((await cleanupMenuItem()).dot).toBe(true);
   });
 });
+
+describe("Openp41geWindowManager traffic lights", () => {
+  let wm: Wm;
+
+  beforeEach(() => {
+    stubWindow();
+    const w = (window as unknown as { openp41ge: Record<string, unknown> }).openp41ge;
+    w.window = { close: vi.fn(), minimize: vi.fn(), toggleFullScreen: vi.fn() };
+    wm = new Openp41geWindowManager() as Wm;
+    (wm as Wm)._loaded = true;
+    document.body.appendChild(wm as unknown as HTMLElement);
+  });
+
+  afterEach(() => {
+    wm.remove();
+  });
+
+  it("has all three: close, minimize and a green fullscreen light", async () => {
+    await (wm as Wm).updateComplete;
+    const buttons = [...(wm.shadowRoot?.querySelectorAll<HTMLElement>(".wm-winbtns .wm-winbtn") ?? [])];
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Close window",
+      "Minimize window",
+      "Toggle full screen",
+    ]);
+    buttons[2].click();
+    const api = (window as unknown as { openp41ge: { window: { toggleFullScreen: ReturnType<typeof vi.fn> } } })
+      .openp41ge.window;
+    expect(api.toggleFullScreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("the green light is green", async () => {
+    await (wm as Wm).updateComplete;
+    const css = [...(wm.shadowRoot?.querySelectorAll("style") ?? [])]
+      .map((s) => s.textContent ?? "")
+      .join("\n");
+    expect(css).toMatch(/\.wm-winbtn--full\s*\{[^}]*background:\s*#28c840;/);
+  });
+});
