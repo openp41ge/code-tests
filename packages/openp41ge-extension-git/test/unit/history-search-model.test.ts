@@ -1,17 +1,17 @@
 /**
- * The History sidebar's model: what it searches (which repos, which
+ * The Git History Search sidebar's model: what it searches (which repos, which
  * options), how it streams each repo's history window by window and merges
  * the matches, what it fetches on demand, and the match helpers.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  HistoryModel,
+  HistorySearchModel,
   SEARCH_WINDOW,
   entryParts,
   hits,
   resultsSummary,
-  type HistoryApi,
-} from "@openp41ge-extension-git/history-model";
+  type HistorySearchApi,
+} from "@openp41ge-extension-git/history-search-model";
 import type { SearchResultCommit } from "@openp41ge-extension-git/git-types";
 
 const result = (repoName: string, n: number, date: string): SearchResultCommit => ({
@@ -41,13 +41,13 @@ function fakeWindows(length: Record<string, number>) {
   });
 }
 
-function setup(over: Partial<HistoryApi> = {}, length = { [REPOS[0]]: 300, [REPOS[1]]: 300 }) {
-  const api: HistoryApi = {
+function setup(over: Partial<HistorySearchApi> = {}, length = { [REPOS[0]]: 300, [REPOS[1]]: 300 }) {
+  const api: HistorySearchApi = {
     searchWindow: fakeWindows(length),
     matchContext: vi.fn(async () => ({ text: "the body says fix", in: "body" as const })),
     ...over,
   };
-  const m = new HistoryModel(api, () => {});
+  const m = new HistorySearchModel(api, () => {});
   m.setRepos(REPOS);
   return { api, m };
 }
@@ -55,7 +55,7 @@ function setup(over: Partial<HistoryApi> = {}, length = { [REPOS[0]]: 300, [REPO
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("HistoryModel — searching", () => {
+describe("HistorySearchModel — searching", () => {
   it("searches every workspace repo after typing stops, newest results first", async () => {
     const { api, m } = setup();
     m.setQuery("fix");
@@ -238,7 +238,7 @@ describe("HistoryModel — searching", () => {
   });
 });
 
-describe("HistoryModel — match lines on demand", () => {
+describe("HistorySearchModel — match lines on demand", () => {
   it("fetches where a result matched, once, when its subject and paths do not show it", async () => {
     const c = { ...result(REPOS[0], 0, "2026-09-01T00:00:00Z"), message: "chore" };
     const { api, m } = setup({

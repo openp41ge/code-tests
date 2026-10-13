@@ -1,6 +1,6 @@
-/** Where the History options drawer and its mask go. */
+/** Where the Git History Search options drawer and its mask go. */
 import { describe, it, expect } from "vitest";
-import { drawerPlacement } from "@openp41ge-extension-git/history-drawer";
+import { drawerPlacement } from "@openp41ge-extension-git/history-search-drawer";
 
 const rect = (left: number, top: number, width: number, height: number) => ({
   left,

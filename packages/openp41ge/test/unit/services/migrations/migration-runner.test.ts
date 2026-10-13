@@ -212,3 +212,53 @@ describe("runInstructionSet — the repositories-per-workspace set (migrations/)
     expect(fs.existsSync(at("repositories", APP, "main", "a.txt"))).toBe(true);
   }, 20_000);
 });
+
+describe("runInstructionSet — renameAppType", () => {
+  const FROM = "ext:openp41ge-extension-git:history";
+  const TO = "ext:openp41ge-extension-git:history-search";
+  const file = (systemTabs: Record<string, unknown>, editorTabs: Record<string, unknown> = {}) =>
+    JSON.stringify({ id: "w", systemTabs, editorTabs, sharedSidebars: { rightSidebarTabs: ["s1"] } });
+
+  it("renames each saved tab of the app type (and retitles it), in every matching file", () => {
+    write(
+      "workspaces/a.openp41ge-workspace",
+      file(
+        {
+          s1: { id: "s1", appType: FROM, title: "History" },
+          s2: { id: "s2", appType: "ext:openp41ge-extension-explorer:explorer", title: "Explorer" },
+        },
+        { e1: { id: "e1", appType: `${FROM}-other`, title: "x" } },
+      ),
+    );
+    write("workspaces/b.openp41ge-workspace", file({ s9: { id: "s9", appType: FROM, title: "History" } }));
+    write("workspaces/notes.txt", "not json, not matched");
+    const result = run([
+      {
+        op: "renameAppType",
+        files: "workspaces/*.openp41ge-workspace",
+        from: FROM,
+        to: TO,
+        title: "Git History Search",
+      },
+    ]);
+    expect(result.ok).toBe(true);
+    const a = JSON.parse(fs.readFileSync(at("workspaces/a.openp41ge-workspace"), "utf-8"));
+    expect(a.systemTabs.s1).toEqual({ id: "s1", appType: TO, title: "Git History Search" });
+    expect(a.systemTabs.s2.appType).toBe("ext:openp41ge-extension-explorer:explorer");
+    expect(a.editorTabs.e1.appType).toBe(`${FROM}-other`);
+    expect(a.sharedSidebars).toEqual({ rightSidebarTabs: ["s1"] });
+    const b = JSON.parse(fs.readFileSync(at("workspaces/b.openp41ge-workspace"), "utf-8"));
+    expect(b.systemTabs.s9).toEqual({ id: "s9", appType: TO, title: "Git History Search" });
+  });
+
+  it("without a title keeps the saved one; a file with nothing to rename is not rewritten", () => {
+    write("w.json", file({ s1: { id: "s1", appType: FROM, title: "History" } }));
+    write("other.json", '{"x": 1}');
+    const before = fs.statSync(at("other.json")).mtimeMs;
+    const result = run([{ op: "renameAppType", files: "*.json", from: FROM, to: TO }]);
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(at("w.json"), "utf-8")).systemTabs.s1.title).toBe("History");
+    expect(fs.readFileSync(at("other.json"), "utf-8")).toBe('{"x": 1}');
+    expect(fs.statSync(at("other.json")).mtimeMs).toBe(before);
+  });
+});

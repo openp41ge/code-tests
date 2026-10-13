@@ -73,11 +73,16 @@ describe("migrateLegacyGitTabs", () => {
     });
   });
 
-  it("opens the History sidebar tab as the extension's", () => {
+  it("opens the History sidebar tab as the extension's Git History Search", () => {
     const out = migrateLegacyGitTabs({
       h: { id: "h", appType: "git", title: "History", pinned: true },
     });
-    expect(out.h).toEqual({ id: "h", appType: `${EXT}:history`, title: "History", pinned: true });
+    expect(out.h).toEqual({
+      id: "h",
+      appType: `${EXT}:history-search`,
+      title: "Git History Search",
+      pinned: true,
+    });
   });
 
   it("leaves other tabs, and old tabs it cannot read, as they are (the same object when clean)", () => {
@@ -117,6 +122,6 @@ describe("reading a workspace file", () => {
       systemTabs: { h: { id: "h", appType: "git", title: "History", pinned: false } },
     });
     expect(data.editorTabs?.a?.appType).toBe(`${EXT}:repository`);
-    expect(data.systemTabs?.h?.appType).toBe(`${EXT}:history`);
+    expect(data.systemTabs?.h?.appType).toBe(`${EXT}:history-search`);
   });
 });

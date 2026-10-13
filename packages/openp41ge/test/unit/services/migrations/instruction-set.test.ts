@@ -83,3 +83,31 @@ describe("REQUIRED_MIGRATIONS", () => {
     expect([...REQUIRED_MIGRATIONS].sort()).toEqual(ids);
   });
 });
+
+describe("parseInstructionSet — renameAppType", () => {
+  const step = (over: Record<string, unknown> = {}) => ({
+    op: "renameAppType",
+    files: "workspaces/*.openp41ge-workspace",
+    from: "ext:openp41ge-extension-git:history",
+    to: "ext:openp41ge-extension-git:history-search",
+    title: "Git History Search",
+    ...over,
+  });
+
+  it("accepts files, from, to and an optional title", () => {
+    expect(parseInstructionSet(set([step()])).steps[0]).toEqual(step());
+    const { title: _t, ...noTitle } = step();
+    expect(parseInstructionSet(set([noTitle])).steps[0]).toEqual(noTitle);
+  });
+
+  it.each([
+    ["no from", { from: undefined }],
+    ["no to", { to: "" }],
+    ["an app type with spaces", { to: "ext:a b" }],
+    ["the same from and to", { to: "ext:openp41ge-extension-git:history" }],
+    ["an empty title", { title: "" }],
+    ["files outside the data folder", { files: "../x.json" }],
+  ])("refuses %s", (_what, over) => {
+    expect(() => parseInstructionSet(set([step(over)]))).toThrow();
+  });
+});

@@ -26,12 +26,12 @@ beforeAll(async () => {
 });
 
 describe("renderer registration", () => {
-  it("registers the Repositories sidebar and the Git output, Repository, Commit and File diff grid tabs, and the History sidebar", () => {
+  it("registers the Repositories sidebar and the Git output, Repository, Commit and File diff grid tabs, and the Git History Search sidebar", () => {
     expect(renderers).toHaveLength(6);
     expect(renderers![5]).toMatchObject({
       kind: "sidebar",
-      id: "history",
-      title: "History",
+      id: "history-search",
+      title: "Git History Search",
       defaultSide: "right",
     });
     expect(renderers![4]).toMatchObject({ kind: "grid", id: "commit", title: "Commit" });
