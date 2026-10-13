@@ -133,7 +133,9 @@ describe("renderMigrations — offline: what the download needs", () => {
     expect(items(root)[0]).toEqual({ text: "Connected to the internet", state: "ok" });
     expect(items(root)[1].state).toBe("bad");
     expect(items(root)[1].text).toContain("The distribution servers have limited requests from this network");
-    expect(items(root)[1].text).toContain("14:05");
+    // In the computer's own time format ("14:05", or "02:05 PM").
+    const time = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(items(root)[1].text).toContain(`Try again at ${time}.`);
   });
 
   it("Continue (the arrow) is disabled until every requirement is met; pressing it then continues", () => {
