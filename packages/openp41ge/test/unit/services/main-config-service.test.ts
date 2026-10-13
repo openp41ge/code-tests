@@ -51,7 +51,13 @@ describe("ConfigService (main process)", () => {
     expect(d.appTheme).toBe("dark");
     expect(d.lineHeight).toBe(20);
     expect(d.editorFontSize).toBe(14);
-    expect(d.editor).toEqual({ maxFileSize: 50 * 1024 * 1024, wordWrap: false });
+    // Saving trims trailing whitespace and ends files with a newline, unless turned off.
+    expect(d.editor).toEqual({
+      maxFileSize: 50 * 1024 * 1024,
+      wordWrap: false,
+      trimTrailingWhitespace: true,
+      insertFinalNewline: true,
+    });
     expect(d).not.toHaveProperty("syntaxThemes");
     // Which consumer opens each dropped payload kind: none chosen by default.
     expect(d.dragConsumers).toEqual({});
