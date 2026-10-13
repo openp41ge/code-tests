@@ -2,7 +2,7 @@
  * Unit tests for FileSizeGate — the editor open-size threshold.
  *
  * The platform shows a "too large" message (and never reads the file) when a
- * file exceeds editor.maxFileSize. This pins the pure decision invoked by
+ * file exceeds editor/file.maxFileSize. This pins the pure decision invoked by
  * FileEditorController before any read.
  */
 import { describe, test, expect } from "vitest";

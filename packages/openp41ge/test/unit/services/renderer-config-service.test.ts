@@ -230,3 +230,15 @@ describe("ConfigService (renderer)", () => {
     document.documentElement.setAttribute = origSetAttribute;
   });
 });
+
+describe("ConfigService (renderer) — editor sections (keys with a slash)", () => {
+  test("a section key with a slash is one key: get, and cross-window changes", async () => {
+    await configService.load();
+    onChangedHandler!({ key: "editor/file", value: { maxFileSize: 1024, wordWrap: true } });
+    expect(configService.get("editor/file.maxFileSize")).toBe(1024);
+    expect(configService.get("editor/file.wordWrap")).toBe(true);
+    onChangedHandler!({ key: "editor/*.lineHeight", value: 26 });
+    expect(configService.get("editor/*.lineHeight")).toBe(26);
+    expect(configService.get("editor/*")).toEqual({ lineHeight: 26 });
+  });
+});

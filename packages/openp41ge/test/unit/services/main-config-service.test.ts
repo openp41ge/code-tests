@@ -49,15 +49,20 @@ describe("ConfigService (main process)", () => {
     const d = configService.getDefaults();
     expect(d.version).toBe(1);
     expect(d.appTheme).toBe("dark");
-    expect(d.lineHeight).toBe(20);
-    expect(d.editorFontSize).toBe(14);
+    // Editor settings: `editor/*` for every editor, `editor/file` and
+    // `editor/json` for one kind (their values win over `editor/*`).
+    expect(d["editor/*"]).toEqual({ lineHeight: 20, fontSize: 14 });
     // Saving trims trailing whitespace and ends files with a newline, unless turned off.
-    expect(d.editor).toEqual({
+    expect(d["editor/file"]).toEqual({
       maxFileSize: 50 * 1024 * 1024,
       wordWrap: false,
       trimTrailingWhitespace: true,
       insertFinalNewline: true,
     });
+    expect(d["editor/json"]).toEqual({});
+    for (const retired of ["lineHeight", "editorFontSize", "editor"]) {
+      expect(d).not.toHaveProperty(retired);
+    }
     expect(d).not.toHaveProperty("syntaxThemes");
     // Which consumer opens each dropped payload kind: none chosen by default.
     expect(d.dragConsumers).toEqual({});
@@ -74,9 +79,9 @@ describe("ConfigService (main process)", () => {
       JSON.stringify({
         version: 1,
         appTheme: "light",
-        lineHeight: 24,
-        editorFontSize: 16,
-        editor: { wordWrap: true },
+        "editor/*": { lineHeight: 24, fontSize: 16 },
+        "editor/file": { wordWrap: true },
+        "editor/json": { fontSize: 12 },
       }),
       "utf-8",
     );
@@ -84,9 +89,10 @@ describe("ConfigService (main process)", () => {
     configService.init();
 
     expect(configService.get("appTheme")).toBe("light");
-    expect(configService.get("lineHeight")).toBe(24);
-    expect(configService.get("editorFontSize")).toBe(16);
-    expect(configService.get("editor.wordWrap")).toBe(true);
+    expect(configService.get("editor/*.lineHeight")).toBe(24);
+    expect(configService.get("editor/*.fontSize")).toBe(16);
+    expect(configService.get("editor/file.wordWrap")).toBe(true);
+    expect(configService.get("editor/json.fontSize")).toBe(12);
   });
 
   test("init() drops the retired editor.fontFamily and syntaxThemes (nothing read them)", () => {
@@ -104,59 +110,79 @@ describe("ConfigService (main process)", () => {
     configService.init();
 
     const parsed = JSON.parse(fs.readFileSync(path.join(configDir, "config.json"), "utf-8"));
-    expect(parsed).toEqual({ editor: { maxFileSize: 1024 } });
+    expect(parsed).toEqual({ "editor/file": { maxFileSize: 1024 } });
   });
 
-  test("init() promotes legacy nested editor.lineHeight/fontSize to editorFontSize", () => {
-    // Configs written before the platform settings were lifted to the top
-    // level store line-height/font-size nested under `editor`; they should be
-    // promoted and the stale nested keys removed.
+  /** Write `config.json`, load it, and return what is on disk afterwards. */
+  function loadFile(contents: Record<string, unknown>): Record<string, unknown> {
     const configDir = path.join(tmpDir, ".config");
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(configDir, "config.json"),
-      JSON.stringify({
-        version: 1,
-        appTheme: "dark",
-        editor: { lineHeight: 30, fontSize: 12, fontFamily: "monospace", maxFileSize: 1024 },
-      }),
-      "utf-8",
-    );
-
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify(contents), "utf-8");
     configService.init();
-    expect(configService.get("lineHeight")).toBe(30);
-    expect(configService.get("editorFontSize")).toBe(12);
-    const editor = configService.get("editor") as Record<string, unknown>;
-    expect("lineHeight" in editor).toBe(false);
-    expect("fontSize" in editor).toBe(false);
-    expect(editor.maxFileSize).toBe(1024);
+    return JSON.parse(fs.readFileSync(path.join(configDir, "config.json"), "utf-8"));
+  }
+
+  test("init() moves the old editor settings into editor/* and editor/file", () => {
+    const parsed = loadFile({
+      lineHeight: 24,
+      editorFontSize: 16,
+      editor: {
+        maxFileSize: 1024,
+        wordWrap: true,
+        trimTrailingWhitespace: false,
+        insertFinalNewline: false,
+      },
+    });
+    expect(configService.get("editor/*.lineHeight")).toBe(24);
+    expect(configService.get("editor/*.fontSize")).toBe(16);
+    expect(configService.get("editor/file.maxFileSize")).toBe(1024);
+    expect(configService.get("editor/file.wordWrap")).toBe(true);
+    expect(configService.get("editor/file.trimTrailingWhitespace")).toBe(false);
+    expect(configService.get("editor/file.insertFinalNewline")).toBe(false);
+    // The old keys are gone from memory and from disk.
+    for (const old of ["lineHeight", "editorFontSize", "editor"]) {
+      expect(configService.get(old)).toBeUndefined();
+      expect(parsed).not.toHaveProperty(old);
+    }
+    expect(parsed).toEqual({
+      "editor/*": { lineHeight: 24, fontSize: 16 },
+      "editor/file": {
+        maxFileSize: 1024,
+        wordWrap: true,
+        trimTrailingWhitespace: false,
+        insertFinalNewline: false,
+      },
+    });
   });
 
-  test("init() renames a top-level legacy `fontSize` to `editorFontSize`", () => {
-    // Configs written while the editor font size was stored at the top level
-    // under `fontSize` should be promoted to `editorFontSize` and the stale
-    // key removed.
-    const configDir = path.join(tmpDir, ".config");
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(configDir, "config.json"),
-      JSON.stringify({
-        version: 1,
-        appTheme: "dark",
-        lineHeight: 24,
-        fontSize: 18,
-        editor: { fontFamily: "monospace", maxFileSize: 1024 },
-      }),
-      "utf-8",
-    );
+  test("init() keeps an old setting the user pinned at its default", () => {
+    const parsed = loadFile({ lineHeight: 20, editor: { wordWrap: false } });
+    expect(parsed).toEqual({ "editor/*": { lineHeight: 20 }, "editor/file": { wordWrap: false } });
+  });
 
-    configService.init();
-    expect(configService.get("editorFontSize")).toBe(18);
-    expect(configService.get("fontSize")).toBeUndefined();
-    // The migrated shape is persisted so the stale key never reappears.
-    const parsed = JSON.parse(fs.readFileSync(path.join(configDir, "config.json"), "utf-8"));
-    expect(parsed.editorFontSize).toBe(18);
-    expect("fontSize" in parsed).toBe(false);
+  test("init() moves the older nested editor.lineHeight/fontSize and top-level fontSize too", () => {
+    loadFile({ editor: { lineHeight: 30, fontSize: 12, fontFamily: "monospace" } });
+    expect(configService.get("editor/*.lineHeight")).toBe(30);
+    expect(configService.get("editor/*.fontSize")).toBe(12);
+    expect(configService.get("editor")).toBeUndefined();
+    configService.destroy();
+    fs.rmSync(path.join(tmpDir, ".config"), { recursive: true, force: true });
+    configService = new ConfigService(tmpDir);
+    const parsed = loadFile({ fontSize: 18 });
+    expect(configService.get("editor/*.fontSize")).toBe(18);
+    expect(parsed).toEqual({ "editor/*": { fontSize: 18 } });
+  });
+
+  test("init(): a value already in the new section wins over an old key", () => {
+    const parsed = loadFile({
+      lineHeight: 24,
+      "editor/*": { lineHeight: 28 },
+      editor: { wordWrap: true },
+      "editor/file": { wordWrap: false },
+    });
+    expect(configService.get("editor/*.lineHeight")).toBe(28);
+    expect(configService.get("editor/file.wordWrap")).toBe(false);
+    expect(parsed).toEqual({ "editor/*": { lineHeight: 28 }, "editor/file": { wordWrap: false } });
   });
 
   test("init() renames the provider-level `model` key to `defaultModel`", () => {
@@ -170,8 +196,6 @@ describe("ConfigService (main process)", () => {
       JSON.stringify({
         version: 1,
         appTheme: "dark",
-        lineHeight: 20,
-        editorFontSize: 14,
         editor: { fontFamily: "monospace", maxFileSize: 1024 },
         agent: {
           providerId: "vllm",
@@ -276,7 +300,7 @@ describe("ConfigService (main process)", () => {
   });
 
   test("init() back-fills the maxFileSize default for legacy config files", () => {
-    // A config written before editor.maxFileSize existed must get the 50MB
+    // A config written before the size limit existed must get the 50MB
     // default via deepMerge rather than a missing/undefined value.
     const configDir = path.join(tmpDir, ".config");
     fs.mkdirSync(configDir, { recursive: true });
@@ -285,15 +309,13 @@ describe("ConfigService (main process)", () => {
       JSON.stringify({
         version: 1,
         appTheme: "dark",
-        lineHeight: 20,
-        editorFontSize: 14,
         editor: { fontFamily: "monospace" },
       }),
       "utf-8",
     );
 
     configService.init();
-    expect(configService.get("editor.maxFileSize")).toBe(50 * 1024 * 1024);
+    expect(configService.get("editor/file.maxFileSize")).toBe(50 * 1024 * 1024);
   });
 
   test("init() deep-merges existing config with defaults", () => {
@@ -314,11 +336,11 @@ describe("ConfigService (main process)", () => {
     // Custom value preserved
     expect(configService.get("appTheme")).toBe("light");
     // Defaults filled in
-    expect(configService.get("lineHeight")).toBe(20);
-    expect(configService.get("editorFontSize")).toBe(14);
+    expect(configService.get("editor/*.lineHeight")).toBe(20);
+    expect(configService.get("editor/*.fontSize")).toBe(14);
     // The auto-update channel defaults to the stable "latest" track.
     expect(configService.get("updateChannel")).toBe("latest");
-    expect(configService.get("editor.wordWrap")).toBe(false);
+    expect(configService.get("editor/file.wordWrap")).toBe(false);
   });
 
   test("updateChannelForVersion derives the channel from the version's prerelease track", () => {
@@ -361,14 +383,14 @@ describe("ConfigService (main process)", () => {
     expect(all).toBeDefined();
     expect(all.version).toBe(1);
     expect(all.appTheme).toBeDefined();
-    expect(all.editor).toBeDefined();
+    expect(all["editor/*"]).toBeDefined();
     expect(all.dragConsumers).toEqual({});
   });
 
   test("get() returns undefined for unknown keys", () => {
     configService.init();
     expect(configService.get("nonexistent")).toBeUndefined();
-    expect(configService.get("editor.nonexistent")).toBeUndefined();
+    expect(configService.get("editor/file.nonexistent")).toBeUndefined();
   });
 
   test("get() with no key returns the entire config", () => {
@@ -392,53 +414,53 @@ describe("ConfigService (main process)", () => {
 
   test("set() supports nested keys", () => {
     configService.init();
-    configService.set("lineHeight", 30);
-    configService.set("editorFontSize", 18);
+    configService.set("editor/*.lineHeight", 30);
+    configService.set("editor/json.fontSize", 18);
 
-    expect(configService.get("lineHeight")).toBe(30);
-    expect(configService.get("editorFontSize")).toBe(18);
+    expect(configService.get("editor/*.lineHeight")).toBe(30);
+    expect(configService.get("editor/json.fontSize")).toBe(18);
   });
 
   test("getOverrides() returns only the user-written overrides", () => {
     configService.init();
     // Fresh config: nothing overridden → empty overrides document.
     expect(configService.getOverrides()).toEqual({});
-    configService.set("lineHeight", 30);
-    expect(configService.getOverrides()).toEqual({ lineHeight: 30 });
+    configService.set("editor/*.lineHeight", 30);
+    expect(configService.getOverrides()).toEqual({ "editor/*": { lineHeight: 30 } });
     // Defaults themselves are NOT overrides.
     expect(configService.getOverrides()).not.toHaveProperty("appTheme");
   });
 
   test("getOverrides() and the persisted file are alphabetised on save", () => {
     configService.init();
-    // Set keys in a non-alphabetical order (updateChannel before editorFontSize/lineHeight).
+    // Set keys in a non-alphabetical order (updateChannel before the editor sections).
     configService.set("updateChannel", "alpha");
-    configService.set("editorFontSize", 16);
-    configService.set("lineHeight", 30);
+    configService.set("editor/file.wordWrap", true);
+    configService.set("editor/*.lineHeight", 30);
     // The overrides doc read back is sorted by key.
     expect(Object.keys(configService.getOverrides())).toEqual([
-      "editorFontSize",
-      "lineHeight",
+      "editor/*",
+      "editor/file",
       "updateChannel",
     ]);
     // And the written file is sorted too.
     const parsed = JSON.parse(
       fs.readFileSync(path.join(tmpDir, ".config", "config.json"), "utf-8"),
     );
-    expect(Object.keys(parsed)).toEqual(["editorFontSize", "lineHeight", "updateChannel"]);
+    expect(Object.keys(parsed)).toEqual(["editor/*", "editor/file", "updateChannel"]);
   });
 
   test("set() persists an explicit pin even when it equals the default", () => {
     configService.init();
     // The user explicitly sets a value that happens to equal the default.
-    configService.set("lineHeight", 20);
+    configService.set("editor/*.lineHeight", 20);
 
     const configPath = path.join(tmpDir, ".config", "config.json");
     const parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     // It's stored (not pruned) so a future default change won't move it silently.
-    expect(parsed).toEqual({ lineHeight: 20 });
-    expect(configService.getOverrides()).toEqual({ lineHeight: 20 });
-    expect(configService.get("lineHeight")).toBe(20);
+    expect(parsed).toEqual({ "editor/*": { lineHeight: 20 } });
+    expect(configService.getOverrides()).toEqual({ "editor/*": { lineHeight: 20 } });
+    expect(configService.get("editor/*.lineHeight")).toBe(20);
   });
 
   test("a pinned value in the config file survives a restart", () => {
@@ -446,26 +468,26 @@ describe("ConfigService (main process)", () => {
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
       path.join(configDir, "config.json"),
-      JSON.stringify({ lineHeight: 20 }),
+      JSON.stringify({ "editor/*": { lineHeight: 20 } }),
       "utf-8",
     );
     configService.init();
     // The pin is remembered as an override and not pruned on the next write.
-    expect(configService.getOverrides()).toEqual({ lineHeight: 20 });
-    configService.set("editorFontSize", 16);
+    expect(configService.getOverrides()).toEqual({ "editor/*": { lineHeight: 20 } });
+    configService.set("editor/*.fontSize", 16);
     const parsed = JSON.parse(fs.readFileSync(path.join(configDir, "config.json"), "utf-8"));
-    expect(parsed).toEqual({ lineHeight: 20, editorFontSize: 16 });
+    expect(parsed).toEqual({ "editor/*": { lineHeight: 20, fontSize: 16 } });
   });
 
   test("a bulk container write does NOT pin its default-valued leaves", () => {
     configService.init();
     // Saving a whole object must not persist every leaf — only the leaves
     // that actually differ from default.
-    configService.set("editor", { maxFileSize: 50 * 1024 * 1024 });
+    configService.set("editor/file", { maxFileSize: 50 * 1024 * 1024 });
     const configPath = path.join(tmpDir, ".config", "config.json");
     const parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     // Everything is at its default → the editor section is pruned entirely.
-    expect(parsed).not.toHaveProperty("editor");
+    expect(parsed).not.toHaveProperty("editor/file");
   });
 
   test("onChange() fires when config is updated via set()", () => {

@@ -17,15 +17,15 @@ function platform(overrides: Record<string, unknown> = {}) {
     getDefaults: async () => ({
       appTheme: "dark",
       updateChannel: "latest",
-      lineHeight: 20,
-      editorFontSize: 14,
       dragConsumers: {},
-      editor: { maxFileSize: 1000, wordWrap: false },
+      "editor/*": { lineHeight: 20, fontSize: 14 },
+      "editor/file": { maxFileSize: 1000, wordWrap: false },
+      "editor/json": {},
       extensions: { "some-ext": {} },
     }),
     getOverrides: async () => ({
-      lineHeight: 24,
-      editor: { wordWrap: true },
+      "editor/*": { lineHeight: 24 },
+      "editor/file": { wordWrap: true },
       extensions: { "some-ext": { a: 1 } },
       ...overrides,
     }),
@@ -55,15 +55,23 @@ describe("settingsBridge — the platform's settings", () => {
     expect(d?.defaults).toEqual({
       appTheme: "dark",
       updateChannel: "latest",
-      lineHeight: 20,
-      editorFontSize: 14,
       dragConsumers: {},
-      editor: { maxFileSize: 1000, wordWrap: false },
+      "editor/*": { lineHeight: 20, fontSize: 14 },
+      "editor/file": { maxFileSize: 1000, wordWrap: false },
+      "editor/json": {},
     });
     // The platform's settings only: extensions' sections stay out.
-    expect(d?.overrides).toEqual({ lineHeight: 24, editor: { wordWrap: true } });
+    expect(d?.overrides).toEqual({
+      "editor/*": { lineHeight: 24 },
+      "editor/file": { wordWrap: true },
+    });
     expect(d?.schema.properties).toHaveProperty("dragConsumers");
-    expect(d?.schema.properties).toHaveProperty("editor");
+    for (const section of ["editor/*", "editor/file", "editor/json"]) {
+      expect(d?.schema.properties).toHaveProperty([section]);
+    }
+    for (const retired of ["lineHeight", "editorFontSize", "editor"]) {
+      expect(d?.schema.properties).not.toHaveProperty([retired]);
+    }
   });
 
   it("saves the document: each global key written, a removed one cleared", async () => {
@@ -76,19 +84,33 @@ describe("settingsBridge — the platform's settings", () => {
     expect(p.bridge.set).toHaveBeenCalledWith("dragConsumers", {
       "openp41ge/file-path": "my/viewer",
     });
-    expect(p.bridge.set).toHaveBeenCalledWith("lineHeight", undefined);
-    expect(p.bridge.set).toHaveBeenCalledWith("editor", undefined);
+    expect(p.bridge.set).toHaveBeenCalledWith("editor/*", undefined);
+    expect(p.bridge.set).toHaveBeenCalledWith("editor/file", undefined);
     expect(p.bridge.set).not.toHaveBeenCalledWith("extensions", expect.anything());
   });
 
-  it("saves the file editor's settings, and refuses a wrong type there", async () => {
+  it("saves the editors' settings, and refuses a wrong type or a key in the wrong section", async () => {
     const p = platform();
     const bridge = settingsBridge(extension(), p.bridge);
-    await bridge.set(PLATFORM_SETTINGS_ID, { editor: { maxFileSize: 2048, wordWrap: true } });
-    expect(p.bridge.set).toHaveBeenCalledWith("editor", { maxFileSize: 2048, wordWrap: true });
-    await expect(bridge.set(PLATFORM_SETTINGS_ID, { editor: { wordWrap: "yes" } })).rejects.toThrow(
-      /wordWrap/,
-    );
+    await bridge.set(PLATFORM_SETTINGS_ID, {
+      "editor/*": { lineHeight: 22 },
+      "editor/file": { maxFileSize: 2048, wordWrap: true },
+      "editor/json": { fontSize: 12 },
+    });
+    expect(p.bridge.set).toHaveBeenCalledWith("editor/*", { lineHeight: 22 });
+    expect(p.bridge.set).toHaveBeenCalledWith("editor/file", { maxFileSize: 2048, wordWrap: true });
+    expect(p.bridge.set).toHaveBeenCalledWith("editor/json", { fontSize: 12 });
+    await expect(
+      bridge.set(PLATFORM_SETTINGS_ID, { "editor/file": { wordWrap: "yes" } }),
+    ).rejects.toThrow(/wordWrap/);
+    // The JSON editors cannot wrap, and file-only settings are not shared.
+    for (const doc of [
+      { "editor/json": { wordWrap: true } },
+      { "editor/*": { maxFileSize: 1 } },
+      { "editor/*": { trimTrailingWhitespace: false } },
+    ]) {
+      await expect(bridge.set(PLATFORM_SETTINGS_ID, doc)).rejects.toThrow();
+    }
   });
 
   it("refuses a value the schema does not allow, writing nothing", async () => {
