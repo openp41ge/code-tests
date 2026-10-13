@@ -100,7 +100,7 @@ describe("renderMigrations — offline: what the download needs", () => {
     const { root } = offline({ internet: false, github: "unreachable" });
     expect(items(root)).toEqual([
       { text: "Not connected to the internet", state: "bad" },
-      { text: "GitHub can't be reached", state: "bad" },
+      { text: "Distribution servers can't be reached", state: "bad" },
     ]);
     expect(root.querySelector(".mg-titlebar .mg-status")).toBeNull();
     expect(root.querySelector(".mg-body .mg-checklist")).not.toBeNull();
@@ -112,12 +112,27 @@ describe("renderMigrations — offline: what the download needs", () => {
     expect(next(root).getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("being checked (the connection just came back): a blue spinner", () => {
+    const { root } = offline({ internet: true, github: "checking" });
+    expect(items(root)).toEqual([
+      { text: "Connected to the internet", state: "ok" },
+      { text: "Checking the distribution servers…", state: "checking" },
+    ]);
+    expect(root.querySelectorAll(".mg-check[data-state=checking] .mg-spinner")).toHaveLength(1);
+    expect(next(root).getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("before the first check: spinners on both", () => {
+    const { root } = offline();
+    expect(root.querySelectorAll(".mg-spinner")).toHaveLength(2);
+  });
+
   it("rate limited: says until when", () => {
     const at = new Date(2026, 9, 13, 14, 5).getTime();
     const { root } = offline({ internet: true, github: "rate-limited", githubResetAt: at });
     expect(items(root)[0]).toEqual({ text: "Connected to the internet", state: "ok" });
     expect(items(root)[1].state).toBe("bad");
-    expect(items(root)[1].text).toContain("GitHub has limited requests from this network");
+    expect(items(root)[1].text).toContain("The distribution servers have limited requests from this network");
     expect(items(root)[1].text).toContain("14:05");
   });
 
@@ -129,7 +144,7 @@ describe("renderMigrations — offline: what the download needs", () => {
 
     const met = offline({ internet: true, github: "ok" });
     expect(items(met.root).map((i) => i.state)).toEqual(["ok", "ok"]);
-    expect(items(met.root)[1].text).toBe("GitHub can be reached");
+    expect(items(met.root)[1].text).toBe("Distribution servers are reachable");
     expect(next(met.root).getAttribute("aria-disabled")).toBe("false");
     next(met.root).click();
     expect(met.actions.retry).toHaveBeenCalledTimes(1);

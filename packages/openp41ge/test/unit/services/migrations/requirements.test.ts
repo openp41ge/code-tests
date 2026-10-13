@@ -73,4 +73,27 @@ describe("checkRequirements", () => {
     const r = await checkRequirements(probe({ get: vi.fn(async () => ({ status: 503, text: "" })) }));
     expect(r).toEqual({ internet: true, github: "unreachable" });
   });
+
+  it("the connection is back: says the servers are being checked while they are", async () => {
+    const progress = vi.fn();
+    const r = await checkRequirements(probe(), { internet: false, github: "unreachable" }, progress);
+    expect(progress).toHaveBeenCalledWith({ internet: true, github: "checking" });
+    expect(r).toEqual({ internet: true, github: "ok" });
+  });
+
+  it("the first check also shows the servers being checked", async () => {
+    const progress = vi.fn();
+    await checkRequirements(probe(), undefined, progress);
+    expect(progress).toHaveBeenCalledWith({ internet: true, github: "checking" });
+  });
+
+  it("checking again while connected: no progress (no spinner every few seconds)", async () => {
+    const progress = vi.fn();
+    await checkRequirements(probe(), { internet: true, github: "unreachable" }, progress);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
+  it("still being checked is not met", () => {
+    expect(requirementsMet({ internet: true, github: "checking" })).toBe(false);
+  });
 });
