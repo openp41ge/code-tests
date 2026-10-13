@@ -168,3 +168,45 @@ describe("backend registration", () => {
     }
   });
 });
+
+describe("expanded rows: saved per workspace", () => {
+  /** A handler context whose workspace's explorer folder is `dir`. */
+  const ctx = (dir: string | null) =>
+    ({
+      workspace: dir ? { id: "ws", roots: async () => [], dataDir: async () => dir } : null,
+    }) as never;
+
+  it("save-expanded then load-expanded gives back the paths, in the workspace's explorer folder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ext-explorer-expanded-"));
+    try {
+      const paths = ["github.com/acme/app", "/repos/app/main", "/repos/app/main/src"];
+      const saved = (await getHandler("save-expanded")({ paths }, ctx(dir))) as { ok: boolean };
+      expect(saved.ok).toBe(true);
+      expect((await stat(join(dir, "expanded.json"))).isFile()).toBe(true);
+      const loaded = (await getHandler("load-expanded")({}, ctx(dir))) as {
+        ok: boolean;
+        paths: string[];
+      };
+      expect(loaded).toEqual({ ok: true, paths });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("load-expanded: nothing saved yet is no paths", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ext-explorer-expanded-"));
+    try {
+      expect(await getHandler("load-expanded")({}, ctx(dir))).toEqual({ ok: true, paths: [] });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("without a workspace: load gives no paths, save refuses", async () => {
+    expect(await getHandler("load-expanded")({}, ctx(null))).toEqual({ ok: true, paths: [] });
+    const saved = (await getHandler("save-expanded")({ paths: ["a"] }, ctx(null))) as {
+      ok: boolean;
+    };
+    expect(saved.ok).toBe(false);
+  });
+});

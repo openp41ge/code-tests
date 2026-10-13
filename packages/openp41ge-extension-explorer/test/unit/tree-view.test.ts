@@ -74,7 +74,14 @@ function makeHost(
   const host = {
     context,
     state,
-    dispatch,
+    // The open rows' load / save (tree-view-expanded.test.ts) are answered
+    // here, so `dispatch` sees only the commands these tests are about.
+    dispatch: (command: string, payload?: unknown) =>
+      command === "load-expanded"
+        ? Promise.resolve({ ok: true, paths: [] })
+        : command === "save-expanded"
+          ? Promise.resolve({ ok: true })
+          : dispatch(command, payload),
     setState: (update: (prev: ExplorerState) => ExplorerState) => {
       state = update(state);
       host.state = state;
