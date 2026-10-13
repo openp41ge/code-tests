@@ -13,6 +13,7 @@ import {
   APP_DATA_DIR_DEV,
   appDataDirName,
   chromiumProfileDirName,
+  resolveChromiumProfileDir,
   resolveAppDataDir,
 } from "../../../src/main/services/app-data-dir";
 
@@ -73,5 +74,31 @@ describe("resolveAppDataDir", () => {
   test("ignores the retired OPENP41GE_E2E_DIR override", () => {
     process.env.OPENP41GE_E2E_DIR = "/tmp/e2e-openp41ge";
     expect(resolveAppDataDir(false)).toBe(path.join(os.homedir(), APP_DATA_DIR_DEV));
+  });
+});
+
+describe("resolveChromiumProfileDir", () => {
+  const orig = process.env;
+
+  beforeEach(() => {
+    process.env = { ...orig };
+    delete process.env.OPENP41GE_DIR;
+  });
+
+  afterEach(() => {
+    process.env = orig;
+  });
+
+  test("is the app's folder under the OS app-data folder", () => {
+    expect(resolveChromiumProfileDir(true, "/AppData")).toBe(path.join("/AppData", "openp41ge code"));
+    expect(resolveChromiumProfileDir(false, "/AppData")).toBe(
+      path.join("/AppData", "openp41ge code development"),
+    );
+  });
+
+  test("with OPENP41GE_DIR it lives inside that folder, so a throwaway run shares nothing", () => {
+    process.env.OPENP41GE_DIR = "/tmp/throwaway";
+    expect(resolveChromiumProfileDir(true, "/AppData")).toBe(path.join("/tmp/throwaway", "chromium-profile"));
+    expect(resolveChromiumProfileDir(false, "/AppData")).toBe(path.join("/tmp/throwaway", "chromium-profile"));
   });
 });
