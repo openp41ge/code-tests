@@ -149,4 +149,27 @@ describe("openp41ge-cleanup-pane", () => {
     await el.updateComplete;
     expect($$(el, ".cp-item")).toHaveLength(0);
   });
+
+  test("a failed run says so in a toast; the bottom bar has no message", async () => {
+    const { deps } = makeDeps([ITEM], { run: vi.fn(async () => Promise.reject(new Error("EACCES"))) });
+    const el = await mount(deps);
+    $(el, ".cp-run")!.click();
+    await tick();
+    await el.updateComplete;
+    expect(toasts()).toEqual(["Cleanup couldn't run"]);
+    expect($(el, ".cp-footer")!.textContent!.trim()).toBe("");
+  });
+
+  test("a failed delete says so in a toast", async () => {
+    const { deps } = makeDeps([ITEM], { delete: vi.fn(async () => ({ ok: false, error: "EBUSY" })) });
+    const el = await mount(deps);
+    $(el, ".cp-delete")!.click();
+    await tick();
+    await el.updateComplete;
+    expect(toasts()).toEqual(["Couldn't delete github.com/acme/old"]);
+    expect($(el, ".cp-footer")!.textContent!.trim()).toBe("");
+  });
 });
+
+const toasts = () =>
+  [...document.querySelectorAll(".openp41ge-toast-msg")].map((t) => t.textContent);

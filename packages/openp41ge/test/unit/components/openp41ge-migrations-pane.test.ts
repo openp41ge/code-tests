@@ -61,4 +61,16 @@ describe("openp41ge-migrations-pane", () => {
     expect($(el, ".mp-state")?.textContent).toContain("No data updates have run");
     expect($(el, ".mp-versions")?.textContent).toContain("Data version not recorded");
   });
+
+  test("a status that can't be read says so in a toast; the bottom bar has no message", async () => {
+    Openp41geMigrationsPane.deps = { status: vi.fn(async () => Promise.reject(new Error("x"))) };
+    const el = document.createElement("openp41ge-migrations-pane") as Openp41geMigrationsPane;
+    document.body.appendChild(el);
+    await tick();
+    await el.updateComplete;
+    expect(
+      [...document.querySelectorAll(".openp41ge-toast-msg")].map((t) => t.textContent),
+    ).toEqual(["Couldn't read the data update status"]);
+    expect($(el, ".mp-footer")!.textContent!.trim()).toBe("");
+  });
 });

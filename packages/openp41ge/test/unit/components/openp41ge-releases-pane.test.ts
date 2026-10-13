@@ -140,4 +140,31 @@ describe("releases pane", () => {
     await el.updateComplete;
     expect(refresh().getAttribute("aria-busy")).toBe("false");
   });
+
+  test("a refresh that fails says so in a toast; the bottom bar has no message", async () => {
+    const fake = fakeReleases();
+    const el = await mount(fake);
+    const failed = { releases: [ALPHA_8], fetchedAt: 1, checking: false, error: "offline" };
+    fake.deps.refreshReleases.mockImplementation(async () => {
+      fake.push(failed);
+      return failed;
+    });
+    root(el).querySelector<HTMLButtonElement>('[aria-label="Check for releases"]')!.click();
+    await tick();
+    await el.updateComplete;
+    expect(toasts()).toEqual(["Couldn't check for releases"]);
+    expect(root(el).querySelector(".rp-footer")!.textContent!.trim()).toBe("");
+  });
+
+  test("a background check that fails shows no message", async () => {
+    const fake = fakeReleases();
+    const el = await mount(fake);
+    fake.push({ error: "offline" });
+    await el.updateComplete;
+    expect(toasts()).toEqual([]);
+    expect(root(el).querySelector(".rp-footer")!.textContent!.trim()).toBe("");
+  });
 });
+
+const toasts = () =>
+  [...document.querySelectorAll(".openp41ge-toast-msg")].map((t) => t.textContent);
