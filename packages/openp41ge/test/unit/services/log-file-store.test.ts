@@ -427,3 +427,29 @@ describe("LogFileStore error ids", () => {
     expect(store.findError("e-old")?.message).toBe("old boom");
   });
 });
+
+describe("LogFileStore — levels read back from the file", () => {
+  // The level is saved as its label ("ERROR"); reading it back must give the
+  // same level, or the log viewer's row (drawn from the level) and its detail
+  // drawer (drawn from the label) disagree, and level filters let it through.
+  test("each level reads back as itself, number and label", () => {
+    for (const level of [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR]) {
+      store.append(makeEntry({ level, message: `at ${level}` }));
+    }
+    const read = store.readLogsBackward(null, 10).entries;
+    expect(read.map((e) => [e.level, e.levelLabel])).toEqual([
+      [LogLevel.DEBUG, "DEBUG"],
+      [LogLevel.INFO, "INFO"],
+      [LogLevel.WARN, "WARN"],
+      [LogLevel.ERROR, "ERROR"],
+    ]);
+    expect(store.findError("missing")).toBeNull();
+  });
+
+  test("a minimum-level query leaves out the lower levels", () => {
+    store.append(makeEntry({ level: LogLevel.DEBUG, message: "d" }));
+    store.append(makeEntry({ level: LogLevel.INFO, message: "i" }));
+    store.append(makeEntry({ level: LogLevel.ERROR, message: "e" }));
+    expect(store.query({ minLevel: LogLevel.WARN }).map((e) => e.message)).toEqual(["e"]);
+  });
+});
