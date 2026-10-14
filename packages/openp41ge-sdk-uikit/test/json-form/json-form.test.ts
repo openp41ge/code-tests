@@ -76,6 +76,16 @@ describe("json-form fields", () => {
     expect(css).toMatch(/\.jf-description pre\s*\{[^}]*font-size: 11px/);
   });
 
+  it("a text input is a full-width card: a background, no outline", async () => {
+    const { el } = await mount();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    const rule = css.match(/\.jf-input\s*\{([^}]*)\}/)![1];
+    expect(rule).toMatch(/width: 100%/);
+    expect(rule).not.toMatch(/max-width/);
+    expect(rule).toMatch(/border: none/);
+    expect(rule).toMatch(/background: var\(--jf-input-bg, var\(--bg-tertiary/);
+  });
+
   it("required settings without a default come first, marked Required", async () => {
     const { root } = await mount();
     const first = root.querySelector("[data-key]");
