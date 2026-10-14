@@ -25,9 +25,9 @@ Check out both repos side by side:
 
 ```
 ~/Repository/openp41ge/
-  code/master/    the app (a worktree of the bare `code` repo; an older
-                  `app/master` checkout is found too)
-  code-tests/
+  code/master/        the app (a worktree of the bare repo in `code/.git`)
+  code-tests/master/  this repo (likewise; a plain `code-tests/` clone, or an
+                      older `app/master` app checkout, is found too)
 ```
 
 Install and build the app first (`pnpm install && pnpm nx run-many -t build`

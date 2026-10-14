@@ -14,8 +14,10 @@
  *   - relative and absolute ids: from this repo first (helpers, stubs,
  *     fixtures), then from the app (`../../src/...`).
  *
- * The app checkout is `APP_DIR`, else `../code/master` or `../app/master`
- * beside this repo, whichever exists.
+ * The app checkout is `APP_DIR`, else the `code/master` worktree beside
+ * this repo's own worktree (`code-tests/master`), or beside this repo when it
+ * is a plain clone (`code-tests/`), or an older `app/master`, whichever
+ * exists.
  */
 
 import fs from "node:fs";
@@ -37,7 +39,7 @@ function resolveAppDir(): string {
     if (!isCheckout(dir)) throw new Error(`No openp41ge/code checkout at APP_DIR (${dir}).`);
     return dir;
   }
-  const found = ["../code/master", "../app/master"]
+  const found = ["../../code/master", "../code/master", "../app/master"]
     .map((rel) => path.resolve(TESTS_DIR, rel))
     .find(isCheckout);
   if (!found) {
