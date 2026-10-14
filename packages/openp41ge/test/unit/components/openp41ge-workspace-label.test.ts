@@ -52,7 +52,8 @@ afterEach(() => {
 describe("workspace label and picker", () => {
   it("shows the window's workspace name as a button", async () => {
     const el = await mount(deps());
-    expect(el.querySelector(".wl-button .wl-name")?.textContent?.trim()).toBe("Alpha");
+    // Just the name: no icon or caret.
+    expect(el.querySelector(".wl-button")?.textContent?.trim()).toBe("Alpha");
   });
 
   it("lists every workspace, the window's own marked; and No workspace", async () => {
