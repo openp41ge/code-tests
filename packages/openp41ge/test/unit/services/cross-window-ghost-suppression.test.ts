@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Regression test: a workspace-skeleton drag must NOT light up a central grid
- * drop indicator. A workspace skeleton can only be dropped to open a workspace
- * window (drag-out), never onto a grid/tab bar, so a cross-window drag of type
- * "workspace" must not paint a grid ghost overlay. Mirrors the existing
- * "sidebar-tab" guard in _updateCrossWindowGhost.
+ * A cross-window sidebar-tab drag must NOT light up a central grid drop
+ * indicator: a sidebar tab only lands on a sidebar, never on a grid or its tab
+ * bars (the guard in _updateCrossWindowGhost). A tab drag still does.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { initDragSystem } from "@openp41ge/renderer/services/init-drag-system";
@@ -69,16 +67,16 @@ describe("cross-window grid ghost suppression by drag type", () => {
     vi.restoreAllMocks();
   });
 
-  it("does NOT paint a grid ghost while dragging a workspace skeleton", () => {
+  it("does NOT paint a grid ghost while dragging a sidebar tab", () => {
     const grid = makeGrid();
     const H = hooks();
     H.setRemoteDragActive(true);
-    H.setRemoteDragType("workspace");
+    H.setRemoteDragType("sidebar-tab");
 
     // Cursor over the centre of the grid would normally light a drop zone.
     H.callUpdateCrossWindowGhost(200, 150);
 
-    expect(H.getRemoteDragType()).toBe("workspace");
+    expect(H.getRemoteDragType()).toBe("sidebar-tab");
     expect(H.getGridGhostOverlay()).toBeNull();
     expect(grid.querySelector(".openp41ge-ghost-overlay")).toBeNull();
   });
@@ -94,7 +92,7 @@ describe("cross-window grid ghost suppression by drag type", () => {
     expect(H.getGridGhostOverlay()).not.toBeNull();
   });
 
-  it("clears any previously-shown grid ghost when the drag type is workspace", () => {
+  it("clears any previously-shown grid ghost when the drag type is sidebar-tab", () => {
     makeGrid();
     const H = hooks();
     H.setRemoteDragActive(true);
@@ -104,8 +102,8 @@ describe("cross-window grid ghost suppression by drag type", () => {
     H.callUpdateCrossWindowGhost(200, 150);
     expect(H.getGridGhostOverlay()).not.toBeNull();
 
-    // Switching to a workspace drag must hide the grid ghost.
-    H.setRemoteDragType("workspace");
+    // Switching to a sidebar-tab drag must hide the grid ghost.
+    H.setRemoteDragType("sidebar-tab");
     H.callUpdateCrossWindowGhost(200, 150);
     expect(H.getGridGhostOverlay()).toBeNull();
   });
