@@ -104,6 +104,11 @@ describe("workspace label and picker", () => {
     expect(rule("openp41ge-workspace-label .wl-list")).toMatch(/padding:\s*0 8px/);
     // …and each row is rounded, so its hover background reads as a card.
     expect(rule("openp41ge-workspace-label .wl-item")).toMatch(/border-radius:\s*5px/);
+    // A visible hover: the text colour washed over the panel (theme-aware),
+    // brighter than the panel's own hover token.
+    expect(rule("openp41ge-workspace-label .wl-item:hover")).toMatch(
+      /background:\s*color-mix\(in srgb, var\(--text-primary[^)]*\) 1[0-9]%, transparent\)/,
+    );
   });
 
   it("a window with no workspace offers no close button", async () => {
