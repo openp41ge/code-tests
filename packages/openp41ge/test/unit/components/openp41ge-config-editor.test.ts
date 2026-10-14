@@ -60,7 +60,7 @@ async function mount(bridge: ExtensionConfigBridge, extensionId = "demo") {
   el.extensionId = extensionId;
   document.body.appendChild(el);
   await tick();
-  (el.querySelector('[aria-label="Edit as JSON"]') as HTMLButtonElement | null)?.click();
+  (el.querySelector('[aria-label="JSON view"]') as HTMLButtonElement | null)?.click();
   await tick();
   return el;
 }

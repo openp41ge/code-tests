@@ -91,22 +91,35 @@ describe("openp41ge-config-editor form view", () => {
       new CustomEvent("json-form-change", { detail: { value: { model: "mistral" } } }),
     );
     await tick();
-    button(el, "Edit as JSON")!.click();
+    button(el, "JSON view")!.click();
     await tick();
     expect(form(el)).toBeNull();
     expect((jsonEditor(el) as HTMLElement & { value: unknown }).value).toEqual({
       model: "mistral",
     });
-    button(el, "Edit as form")!.click();
+    button(el, "Form view")!.click();
     await tick();
     expect(form(el)!.value).toEqual({ model: "mistral" });
+  });
+
+  test("the bottom bar has a Form view and a JSON view button; the open one is pressed", async () => {
+    const el = await mount(fakeBridge());
+    const pressed = () =>
+      ["Form view", "JSON view"].map((l) => button(el, l)!.getAttribute("aria-pressed"));
+    expect(pressed()).toEqual(["true", "false"]);
+    expect(button(el, "Form view")!.querySelector("svg path")!.getAttribute("d")).toBe(
+      "M240-160 80-320l56-56 64 62v-446h80v446l64-62 56 56-160 160Zm240-40v-80h400v80H480Zm0-240v-80h400v80H480Zm0-240v-80h400v80H480Z",
+    );
+    button(el, "JSON view")!.click();
+    await tick();
+    expect(pressed()).toEqual(["false", "true"]);
   });
 
   test("the JSON view's own buttons are only in the JSON view", async () => {
     const el = await mount(fakeBridge());
     expect(button(el, "Show default values")).toBeNull();
     expect(button(el, "Sort keys")).toBeNull();
-    button(el, "Edit as JSON")!.click();
+    button(el, "JSON view")!.click();
     await tick();
     expect(button(el, "Show default values")).not.toBeNull();
     expect(button(el, "Sort keys")).not.toBeNull();
