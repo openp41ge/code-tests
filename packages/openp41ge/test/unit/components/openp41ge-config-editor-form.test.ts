@@ -115,6 +115,16 @@ describe("openp41ge-config-editor form view", () => {
     expect(pressed()).toEqual(["false", "true"]);
   });
 
+  test("the last bottom-bar button moves in from the window's rounded corner (the grid's pad)", async () => {
+    const el = await mount(fakeBridge());
+    const css = [...el.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+    const rule = css.match(/\.cfe-btn:last-child\s*\{([^}]*)\}/)![1];
+    expect(rule).toMatch(/box-sizing:\s*content-box/);
+    expect(rule).toMatch(/padding-right:\s*var\(--grid-edge-right-pad,\s*0px\)/);
+    const buttons = el.querySelectorAll(".cfe-footer > *");
+    expect(buttons[buttons.length - 1].getAttribute("aria-label")).toBe("JSON view");
+  });
+
   test("the JSON view's own buttons are only in the JSON view", async () => {
     const el = await mount(fakeBridge());
     expect(button(el, "Show default values")).toBeNull();
