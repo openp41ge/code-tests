@@ -2,11 +2,13 @@
  * The top bar's workspace name is a button opening the workspace picker:
  * every workspace (the window's own marked), filtered as you type. Picking
  * one replaces the window's workspace; a red "Close workspace" button closes
- * it. With unsaved files in the window it asks first.
+ * it when held: its background fills from where it was pressed, and closes
+ * the workspace once full. With unsaved files in the window it asks first.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   Openp41geWorkspaceLabel,
+  CLOSE_HOLD_MS,
   type WorkspaceLabelDeps,
 } from "@openp41ge/renderer/components/openp41ge-workspace-label";
 
@@ -138,13 +140,63 @@ describe("workspace label and picker", () => {
     expect(d.confirm).not.toHaveBeenCalled();
   });
 
-  it("Close workspace closes the window's workspace", async () => {
-    const d = deps();
-    const el = await mount(d);
-    await open(el);
-    el.querySelector<HTMLButtonElement>("button.wl-close")!.click();
-    await flush();
-    expect(d.switchTo).toHaveBeenCalledWith(null);
+  describe("Close workspace is a long press", () => {
+    const press = (b: HTMLElement, type: string, x = 30, y = 10) =>
+      b.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+
+    async function closeButton(d: ReturnType<typeof deps>) {
+      const el = await mount(d);
+      await open(el);
+      vi.useFakeTimers();
+      return { el, button: el.querySelector<HTMLButtonElement>("button.wl-close")! };
+    }
+
+    afterEach(() => vi.useRealTimers());
+
+    it("a click does not close the workspace", async () => {
+      const d = deps();
+      const { button } = await closeButton(d);
+      press(button, "pointerdown");
+      press(button, "pointerup");
+      button.click();
+      await vi.advanceTimersByTimeAsync(CLOSE_HOLD_MS * 2);
+      expect(d.switchTo).not.toHaveBeenCalled();
+    });
+
+    it("holding fills the background from the press point; full, it closes the workspace", async () => {
+      const d = deps();
+      const { el, button } = await closeButton(d);
+      press(button, "pointerdown", 30, 10);
+      await el.updateComplete;
+      const fill = button.querySelector<HTMLElement>(".wl-close-fill")!;
+      expect(fill.style.left).toBe("30px");
+      expect(fill.style.top).toBe("10px");
+      expect(button.classList.contains("is-holding")).toBe(true);
+      await vi.advanceTimersByTimeAsync(CLOSE_HOLD_MS - 1);
+      expect(d.switchTo).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(d.switchTo).toHaveBeenCalledWith(null);
+    });
+
+    it("releasing before it is full cancels", async () => {
+      const d = deps();
+      const { button } = await closeButton(d);
+      press(button, "pointerdown");
+      await vi.advanceTimersByTimeAsync(CLOSE_HOLD_MS / 2);
+      press(button, "pointerup");
+      await vi.advanceTimersByTimeAsync(CLOSE_HOLD_MS);
+      expect(d.switchTo).not.toHaveBeenCalled();
+      expect(button.classList.contains("is-holding")).toBe(false);
+    });
+
+    it("leaving the button cancels", async () => {
+      const d = deps();
+      const { button } = await closeButton(d);
+      press(button, "pointerdown");
+      press(button, "pointerleave");
+      await vi.advanceTimersByTimeAsync(CLOSE_HOLD_MS * 2);
+      expect(d.switchTo).not.toHaveBeenCalled();
+    });
   });
 
   it("picking the window's own workspace just closes the picker", async () => {
