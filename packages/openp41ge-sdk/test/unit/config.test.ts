@@ -202,3 +202,33 @@ describe("registerConfigSchema", () => {
     }
   });
 });
+
+describe("x-keysOf: a string that names a key of a sibling map", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      defaultHost: { type: "string", "x-keysOf": "hosts" },
+      hosts: { type: "object", additionalProperties: { type: "object" } },
+    },
+  } as const;
+
+  it("is valid when it names a key, or the map is absent", () => {
+    expect(configErrors(schema, { defaultHost: "a", hosts: { a: {} } })).toEqual([]);
+    expect(configErrors(schema, { defaultHost: "a" })).toEqual([]);
+  });
+
+  it("is an error when it names no key", () => {
+    expect(configErrors(schema, { defaultHost: "z", hosts: { a: {}, b: {} } })).toEqual([
+      'defaultHost: must be one of the keys of hosts ("a", "b")',
+    ]);
+  });
+
+  it("a schema whose x-keysOf names no sibling property is refused", () => {
+    expect(() =>
+      validateConfigSchema({
+        type: "object",
+        properties: { d: { type: "string", "x-keysOf": "nope" } },
+      }),
+    ).toThrow(/x-keysOf/);
+  });
+});

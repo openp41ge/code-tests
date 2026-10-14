@@ -111,4 +111,24 @@ describe("openp41ge-config-editor form view", () => {
     expect(button(el, "Show default values")).not.toBeNull();
     expect(button(el, "Sort keys")).not.toBeNull();
   });
+
+  test("the errors are the merged values' (as Save checks them): x-keysOf sees the default map", async () => {
+    const schema: ConfigSchema = {
+      type: "object",
+      properties: {
+        defaultHost: { type: "string", "x-keysOf": "hosts", default: "a" },
+        hosts: { type: "object", default: { a: {} }, additionalProperties: { type: "object" } },
+      },
+    };
+    const bridge = fakeBridge({ defaultHost: "z" });
+    (bridge.describe as ReturnType<typeof vi.fn>).mockImplementation(async () => ({
+      schema,
+      defaults: { defaultHost: "a", hosts: { a: {} } },
+      overrides: { defaultHost: "z" },
+    }));
+    const el = await mount(bridge);
+    expect(form(el)!.errors).toEqual([
+      { path: "defaultHost", message: 'defaultHost: must be one of the keys of hosts ("a")' },
+    ]);
+  });
 });

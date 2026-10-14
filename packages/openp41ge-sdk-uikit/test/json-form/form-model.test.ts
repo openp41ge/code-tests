@@ -60,7 +60,7 @@ describe("formFields: one field per property, by its schema", () => {
       ["hosts", "objects"],
       ["nested", "group"],
       ["either", "unsupported"],
-      ["map", "unsupported"],
+      ["map", "map"],
       ["grid", "unsupported"],
       ["anything", "unsupported"],
     ]);
@@ -214,5 +214,68 @@ describe("setFieldValue / resetField: edits as new user values", () => {
 
   it("reset of an unset path changes nothing", () => {
     expect(resetField({ a: 1 }, ["b", "c"])).toEqual({ a: 1 });
+  });
+});
+
+describe("formFields: maps (an object whose keys are the user's)", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      defaultHost: { type: "string", "x-keysOf": "hosts", default: "a" },
+      hosts: {
+        type: "object",
+        default: { a: { url: "a.example" } },
+        additionalProperties: {
+          type: "object",
+          properties: { url: { type: "string" }, port: { type: "integer" } },
+        },
+      },
+      levels: { type: "object", additionalProperties: { type: ["string", "null"] } },
+    },
+  };
+  const defaults = { defaultHost: "a", hosts: { a: { url: "a.example" } } };
+
+  it("one entry per key, the defaults' and the user's merged; edits by the value's schema", () => {
+    const fields = formFields(schema, { hosts: { a: { port: 8 }, b: { url: "b.example" } } }, defaults);
+    const hosts = byName(fields, "hosts");
+    expect(hosts.kind).toBe("map");
+    expect(hosts.entries!.map((e) => [e.name, e.kind])).toEqual([
+      ["a", "group"],
+      ["b", "group"],
+    ]);
+    expect(hosts.defaultKeys).toEqual(["a"]);
+    expect(hosts.entries![0].fields!.map((f) => [f.key, f.value, f.set])).toEqual([
+      ["hosts.a.url", "a.example", false],
+      ["hosts.a.port", 8, true],
+    ]);
+  });
+
+  it("a nullable string value is a string field that can be null", () => {
+    const [, , levels] = formFields(schema, { levels: { Off: null, Low: "low" } }, defaults);
+    expect(levels.entries!.map((e) => [e.name, e.kind, e.nullable, e.value])).toEqual([
+      ["Off", "string", true, null],
+      ["Low", "string", true, "low"],
+    ]);
+  });
+
+  it("x-keysOf: a menu of the sibling map's keys; the map marks the one it names", () => {
+    const fields = formFields(schema, { hosts: { b: {} } }, defaults);
+    expect(byName(fields, "defaultHost")).toMatchObject({ kind: "enum", options: ["a", "b"] });
+    expect(byName(fields, "hosts").marked).toEqual({
+      key: "a",
+      path: ["defaultHost"],
+      label: "defaultHost",
+    });
+  });
+
+  it("x-keysOf keeps a value that is not a key among the options (the host reports it)", () => {
+    const fields = formFields(schema, { defaultHost: "gone" }, defaults);
+    expect(byName(fields, "defaultHost").options).toEqual(["a", "gone"]);
+  });
+
+  it("reset keeps a map's entry even when it is left empty", () => {
+    const user = { hosts: { b: { url: "b.example" } } };
+    expect(resetField(user, ["hosts", "b", "url"], [["hosts"]])).toEqual({ hosts: { b: {} } });
+    expect(resetField(user, ["hosts", "b", "url"])).toEqual({});
   });
 });

@@ -29,7 +29,7 @@ const schema = {
       },
     },
     nested: { type: "object", title: "Nested", properties: { depth: { type: "integer" } } },
-    map: { type: "object", title: "Map", additionalProperties: { type: "string" } },
+    either: { type: ["string", "number"], title: "Either" },
   },
 };
 const defaults = { enabled: true, size: 3, mode: "safe" };
@@ -157,10 +157,10 @@ describe("json-form fields", () => {
   });
 
   it("a shape it cannot edit points to the JSON view, showing its value", async () => {
-    const { root } = await mount({ value: { map: { a: "b" } } });
-    const field = fieldOf(root, "map");
+    const { root } = await mount({ value: { either: "b" } });
+    const field = fieldOf(root, "either");
     expect(field.textContent).toContain("Edit this in the JSON view");
-    expect(field.querySelector(".jf-json").textContent).toContain('"a": "b"');
+    expect(field.querySelector(".jf-json").textContent).toContain('"b"');
   });
 
   it("shows an error under its field", async () => {
@@ -237,5 +237,103 @@ describe("json-form lists", () => {
     hosts().querySelector('button[aria-label="Remove item 1 of Hosts"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }, {}] });
+  });
+});
+
+describe("json-form maps", () => {
+  const mapSchema = {
+    type: "object",
+    properties: {
+      defaultHost: { type: "string", title: "Default host", "x-keysOf": "hosts", default: "a" },
+      hosts: {
+        type: "object",
+        title: "Hosts",
+        default: { a: { url: "a.example" } },
+        additionalProperties: {
+          type: "object",
+          properties: { url: { type: "string", title: "URL" } },
+        },
+      },
+      levels: {
+        type: "object",
+        title: "Levels",
+        additionalProperties: { type: ["string", "null"] },
+      },
+    },
+  };
+  const mapDefaults = { defaultHost: "a", hosts: { a: { url: "a.example" } } };
+  const mountMap = (value = {}) => mount({ schema: mapSchema, defaults: mapDefaults, value });
+  const segs = (root) => [...fieldOf(root, "hosts").querySelectorAll(".jf-card > .jf-seg")];
+  const btn = (root, label) => root.querySelector(`button[aria-label="${label}"]`);
+
+  it("a map of objects: a card of segments titled by key; the x-keysOf one is Default", async () => {
+    const { root } = await mountMap({ hosts: { b: { url: "b.example" } } });
+    expect(segs(root).map((s) => s.querySelector(".jf-seg-title").textContent.trim())).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(segs(root)[0].querySelector(".jf-pill").textContent).toContain("Default");
+    expect(segs(root)[1].querySelector(".jf-pill")).toBeNull();
+  });
+
+  it("x-keysOf: the setting is a menu of the map's keys; Make default sets it", async () => {
+    const { el, root, changes } = await mountMap({ hosts: { b: {} } });
+    const select = control(root, "defaultHost");
+    expect([...select.options].map((o) => o.textContent.trim())).toEqual(["a", "b"]);
+    btn(root, "Make b the default host").click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ hosts: { b: {} }, defaultHost: "b" });
+  });
+
+  it("opening an entry shows its fields; editing one sets it", async () => {
+    const { el, root, changes } = await mountMap();
+    segs(root)[0].querySelector(".jf-seg-head").click();
+    await el.updateComplete;
+    await typeInto(el, control(root, "hosts.a.url"), "x.example");
+    expect(changes.at(-1)).toEqual({ hosts: { a: { url: "x.example" } } });
+  });
+
+  it("adds an entry under a new key; an empty or taken key cannot be added", async () => {
+    const { el, root, changes } = await mountMap();
+    const key = fieldOf(root, "hosts").querySelector('input[aria-label="New key for Hosts"]');
+    const add = btn(root, "Add to Hosts");
+    expect(add.disabled).toBe(true);
+    await typeInto(el, key, "a");
+    expect(add.disabled).toBe(true);
+    await typeInto(el, key, "c");
+    add.click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ hosts: { c: {} } });
+    expect(segs(root)[1].classList.contains("jf-seg--open")).toBe(true);
+  });
+
+  it("renames and removes the user's entries; the default follows a rename", async () => {
+    const { el, root, changes } = await mountMap({ defaultHost: "b", hosts: { b: { url: "b" } } });
+    segs(root)[1].querySelector(".jf-seg-head").click();
+    await el.updateComplete;
+    const key = segs(root)[1].querySelector('input[aria-label="Key of b"]');
+    key.value = "d";
+    key.dispatchEvent(new Event("change", { bubbles: true }));
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ defaultHost: "d", hosts: { d: { url: "b" } } });
+    btn(root, "Remove d from Hosts").click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ defaultHost: "d" });
+  });
+
+  it("an entry from the defaults cannot be removed or renamed", async () => {
+    const { el, root } = await mountMap();
+    expect(btn(root, "Remove a from Hosts").disabled).toBe(true);
+    segs(root)[0].querySelector(".jf-seg-head").click();
+    await el.updateComplete;
+    expect(segs(root)[0].querySelector('input[aria-label="Key of a"]').disabled).toBe(true);
+  });
+
+  it("a map of values: one row per key; clearing a nullable value sets null", async () => {
+    const { el, root, changes } = await mountMap({ levels: { Low: "low" } });
+    const input = control(root, "levels.Low");
+    expect(input.value).toBe("low");
+    await typeInto(el, input, "");
+    expect(changes.at(-1)).toEqual({ levels: { Low: null } });
   });
 });
