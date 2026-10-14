@@ -1,8 +1,9 @@
 /**
  * The sidebar's + opens the tab picker: a filter field at the top (as the
  * title bar's workspace picker has), then the sidebar tabs in groups —
- * System (built in, needs no workspace), Workspace (needs one), Logs — in
- * that order, never named after an extension. A tab type may name its group;
+ * Workspace (needs one; shown when the window has a workspace), System
+ * (built in, needs no workspace), Logs — in that order, never named after an
+ * extension. A tab type may name its group;
  * otherwise its workspace need decides. Typing filters (empty groups hide);
  * Enter opens the first match; a row opens its tab on this sidebar's side.
  */
@@ -86,11 +87,11 @@ describe("sidebar tab picker", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it("groups the tabs as System, Workspace, Logs, never by extension", async () => {
+  it("groups the tabs as Workspace, System, Logs, never by extension", async () => {
     const picker = await openPicker();
     expect(groups(picker)).toEqual([
-      ["System", ["Workspaces", "Settings", "Releases", "Cleanup", "Migrations"]],
       ["Workspace", ["Explorer"]],
+      ["System", ["Workspaces", "Settings", "Releases", "Cleanup", "Migrations"]],
       ["Logs", ["Log Streams", "Log Search"]],
     ]);
     expect(picker.textContent).not.toMatch(/extension/i);
