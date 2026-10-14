@@ -262,3 +262,49 @@ describe("runInstructionSet — renameAppType", () => {
     expect(fs.statSync(at("other.json")).mtimeMs).toBe(before);
   });
 });
+
+describe("runInstructionSet — renameJsonField", () => {
+  const step = {
+    op: "renameJsonField",
+    file: "c.json",
+    in: ["extensions", "agents"],
+    from: "providerId",
+    to: "defaultProviderId",
+  };
+  const read = () => JSON.parse(fs.readFileSync(at("c.json"), "utf-8"));
+
+  it("renames the key in the object at `in`, keeping its place and the rest", () => {
+    write(
+      "c.json",
+      JSON.stringify({ theme: "dark", extensions: { agents: { a: 1, providerId: "x", b: 2 } } }),
+    );
+    expect(run([step]).error).toBeUndefined();
+    expect(read()).toEqual({ theme: "dark", extensions: { agents: { a: 1, defaultProviderId: "x", b: 2 } } });
+    expect(Object.keys(read().extensions.agents)).toEqual(["a", "defaultProviderId", "b"]);
+  });
+
+  it("renames a top-level key when there is no `in`", () => {
+    write("c.json", JSON.stringify({ providerId: "x" }));
+    const { in: _in, ...topLevel } = step;
+    expect(run([topLevel]).error).toBeUndefined();
+    expect(read()).toEqual({ defaultProviderId: "x" });
+  });
+
+  it("keeps the new key when both are there, dropping the old one", () => {
+    write("c.json", JSON.stringify({ extensions: { agents: { providerId: "old", defaultProviderId: "new" } } }));
+    expect(run([step]).error).toBeUndefined();
+    expect(read()).toEqual({ extensions: { agents: { defaultProviderId: "new" } } });
+  });
+
+  it("leaves the file alone when the file, the object or the key is missing", () => {
+    expect(run([step]).error).toBeUndefined();
+    expect(fs.existsSync(at("c.json"))).toBe(false);
+    for (const text of ['{"theme": "dark"}', '{"extensions": {"agents": {"a": 1}}}']) {
+      write("c.json", text);
+      const before = fs.statSync(at("c.json")).mtimeMs;
+      expect(run([step]).error).toBeUndefined();
+      expect(fs.readFileSync(at("c.json"), "utf-8")).toBe(text);
+      expect(fs.statSync(at("c.json")).mtimeMs).toBe(before);
+    }
+  });
+});

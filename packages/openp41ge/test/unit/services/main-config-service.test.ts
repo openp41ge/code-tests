@@ -217,7 +217,7 @@ describe("ConfigService (main process)", () => {
     expect(configService.get("agent")).toBeUndefined();
   });
 
-  test("init() moves the agent settings to the agents extension's config, for good", () => {
+  test("init() moves the agent settings to the agents extension's config, for good (providerId as defaultProviderId)", () => {
     const configDir = path.join(tmpDir, ".config");
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(
@@ -237,7 +237,7 @@ describe("ConfigService (main process)", () => {
     expect(parsed).toEqual({
       extensions: {
         "openp41ge-extension-agents": {
-          providerId: "vllm",
+          defaultProviderId: "vllm",
           providers: { vllm: { baseUrl: "http://x", defaultModel: "cur" } },
         },
       },
@@ -288,14 +288,14 @@ describe("ConfigService (main process)", () => {
       path.join(configDir, "config.json"),
       JSON.stringify({
         agent: { providerId: "old" },
-        extensions: { "openp41ge-extension-agents": { providerId: "new" } },
+        extensions: { "openp41ge-extension-agents": { defaultProviderId: "new" } },
       }),
       "utf-8",
     );
 
     configService.init();
 
-    expect(configService.get(`${AGENTS}.providerId`)).toBe("new");
+    expect(configService.get(`${AGENTS}.defaultProviderId`)).toBe("new");
     expect(configService.get("agent")).toBeUndefined();
   });
 

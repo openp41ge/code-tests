@@ -68,7 +68,7 @@ beforeEach(() => {
   published = [];
   providerConfigs = [];
   config = {
-    providerId: "fake",
+    defaultProviderId: "fake",
     providers: { fake: { baseUrl: "http://fake/v1", defaultModel: "m1" } },
   };
   backend = new AgentsBackend({ providers: providers() });
@@ -89,6 +89,12 @@ describe("AgentsBackend threads", () => {
     expect(list.map((c) => c.id)).toEqual([chat.id]);
     backend.dispose(); // flush pending writes
     expect(fs.readdirSync(path.join(dataDir, "ws1", "chat-threads"))).toContain(chat.id);
+  });
+
+  it("a new chat uses defaultProviderId unless it picks a provider", async () => {
+    expect(((await run("create")) as { providerId: string }).providerId).toBe("fake");
+    const picked = (await run("create", { providerId: "other" })) as { providerId: string };
+    expect(picked.providerId).toBe("other");
   });
 
   it("lists nothing for a window without a workspace", async () => {
@@ -152,7 +158,7 @@ describe("AgentsBackend agent run", () => {
 
   it("pings the active provider", async () => {
     expect(await run("ping-provider")).toEqual({ ok: true });
-    config = { providerId: "fake", providers: { fake: { baseUrl: "down", defaultModel: "" } } };
+    config = { defaultProviderId: "fake", providers: { fake: { baseUrl: "down", defaultModel: "" } } };
     expect(await run("ping-provider")).toEqual({ ok: false, error: "Provider unreachable" });
     expect(await run("ping-provider", { providerId: "nope" })).toEqual({
       ok: false,

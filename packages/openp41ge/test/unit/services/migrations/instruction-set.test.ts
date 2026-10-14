@@ -111,3 +111,31 @@ describe("parseInstructionSet — renameAppType", () => {
     expect(() => parseInstructionSet(set([step(over)]))).toThrow();
   });
 });
+
+describe("parseInstructionSet — renameJsonField", () => {
+  const step = (over: Record<string, unknown> = {}) => ({
+    op: "renameJsonField",
+    file: ".config/config.json",
+    in: ["extensions", "openp41ge-extension-agents"],
+    from: "providerId",
+    to: "defaultProviderId",
+    ...over,
+  });
+
+  it("accepts file, from, to and an optional object path (in)", () => {
+    expect(parseInstructionSet(set([step()])).steps[0]).toEqual(step());
+    const { in: _in, ...topLevel } = step();
+    expect(parseInstructionSet(set([topLevel])).steps[0]).toEqual(topLevel);
+  });
+
+  it.each([
+    ["no from", { from: undefined }],
+    ["an empty to", { to: "" }],
+    ["the same from and to", { to: "providerId" }],
+    ["an in that is not a list of keys", { in: "extensions.x" }],
+    ["an empty key in in", { in: ["extensions", ""] }],
+    ["a file outside the data folder", { file: "../config.json" }],
+  ])("refuses %s", (_what, over) => {
+    expect(() => parseInstructionSet(set([step(over)]))).toThrow();
+  });
+});

@@ -39,7 +39,7 @@ describe("backend entry", () => {
     });
     const loaded = await host.load(discovered);
     expect(loaded.error).toBeUndefined();
-    expect(configDefaults(schemas[0])).toMatchObject({ providerId: "vllm" });
+    expect(configDefaults(schemas[0])).toMatchObject({ defaultProviderId: "vllm" });
 
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "agents-entry-"));
     try {
