@@ -362,3 +362,28 @@ describe("workspace editor follows its file on disk", () => {
     expect(listeners.size).toBe(0);
   });
 });
+
+describe("workspace editor opened from a dropped workspace", () => {
+  it("uses the platform's workspaces directory when the tab carries no dir", async () => {
+    const dispatch = vi.fn(async () => ({ ok: true }));
+    const { host } = fakeHost(
+      base({
+        dir: undefined,
+        data: { name: "n", repos: [] },
+        savedData: { name: "old", repos: [] },
+        saved: false,
+      }),
+      dispatch,
+    );
+    (host as unknown as { context: unknown }).context = {
+      path: "/ws/a.openp41ge-workspace",
+      name: "a",
+      workspacesDir: "/ws",
+    };
+    await saveEditorState(host);
+    expect(dispatch).toHaveBeenCalledWith(
+      "write",
+      expect.objectContaining({ dir: "/ws", path: "/w.json" }),
+    );
+  });
+});
