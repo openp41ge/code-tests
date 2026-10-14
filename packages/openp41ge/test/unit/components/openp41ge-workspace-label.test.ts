@@ -43,7 +43,7 @@ async function open(el: Openp41geWorkspaceLabel) {
 }
 
 const items = (el: HTMLElement) =>
-  [...el.querySelectorAll<HTMLElement>(".wl-item")].map((i) => i.textContent?.trim());
+  [...el.querySelectorAll<HTMLElement>(".wl-item .wl-item-name")].map((i) => i.textContent?.trim());
 
 afterEach(() => {
   Openp41geWorkspaceLabel.deps = null;
@@ -61,7 +61,13 @@ describe("workspace label and picker", () => {
     const el = await mount(deps());
     await open(el);
     expect(items(el)).toEqual(["Alpha", "Beta"]);
-    expect(el.querySelector(".wl-item--current")?.textContent?.trim()).toBe("Alpha");
+    // The window's own workspace carries an ACTIVE pill (not a check mark).
+    const current = el.querySelector<HTMLElement>(".wl-item--current")!;
+    expect(current.querySelector(".wl-item-name")?.textContent?.trim()).toBe("Alpha");
+    expect(current.querySelector(".wl-active")?.textContent?.trim()).toBe("ACTIVE");
+    expect(el.querySelectorAll(".wl-active")).toHaveLength(1);
+    const css = document.head.querySelector("style[data-openp41ge-workspace-label]")!.textContent!;
+    expect(css).not.toMatch(/✓/);
   });
 
   it("offers to close the window's workspace with a button, not a row", async () => {
@@ -70,6 +76,22 @@ describe("workspace label and picker", () => {
     const close = el.querySelector<HTMLButtonElement>("button.wl-close");
     expect(close?.textContent?.trim()).toBe("Close workspace");
     expect(close?.closest(".wl-list")).toBeNull();
+  });
+
+  it("the close button is full width but still a button: inset, rounded, no separator, a faded red", async () => {
+    const el = await mount(deps());
+    await open(el);
+    const css = document.head.querySelector("style[data-openp41ge-workspace-label]")!.textContent!;
+    const rule = (sel: string) =>
+      css.match(new RegExp(`${sel.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+    expect(rule("openp41ge-workspace-label .wl-foot")).not.toMatch(/border/);
+    expect(rule("openp41ge-workspace-label .wl-foot")).toMatch(/padding:\s*8px/);
+    const button = rule("openp41ge-workspace-label .wl-close");
+    expect(button).toMatch(/width:\s*100%/);
+    expect(button).toMatch(/border-radius:\s*5px/);
+    // Faded: the theme's error red mixed down, never the full-strength red.
+    expect(button).toMatch(/color-mix\(in srgb, var\(--accent-error/);
+    expect(button).not.toMatch(/(^|;)\s*color:\s*var\(--accent-error/);
   });
 
   it("a window with no workspace offers no close button", async () => {
