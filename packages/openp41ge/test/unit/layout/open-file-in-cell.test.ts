@@ -168,7 +168,25 @@ describe("moveTabBetweenCells — no duplicate file in the target cell", () => {
   });
 });
 
-describe("no-duplicate rule applies to files only", () => {
+describe("no-duplicate rule: other tabs keyed by identity", () => {
+  // A log stream ("log:<system>"), a settings editor ("config:<id>") and a
+  // release ("release:<tag>") open once per cell, like a file.
+  test.each([
+    ["log-viewer", "openp41ge", "log:openp41ge"],
+    ["config-editor", "Platform Settings", "config:openp41ge"],
+    ["release", "v0.1.0-alpha.16", "release:v0.1.0-alpha.16"],
+  ])("re-opening a %s tab activates it instead of duplicating", (appType, title, key) => {
+    let { ws, winId } = seeded();
+    ws = ops.actionOpenFile(ws, winId, appType, title, key, 0, true);
+    const first = tabsFor(ws, key)[0];
+    ws = ops.actionOpenFile(ws, winId, "file-viewer", "a.ts", "/a.ts", 0, true);
+    ws = ops.actionOpenFile(ws, winId, appType, title, key, 0, false);
+    expect(tabsFor(ws, key)).toEqual([first]);
+    expect(cell(ws).activeTabId).toBe(first);
+  });
+});
+
+describe("no-duplicate rule applies to files and identity-keyed tabs only", () => {
   test("two git worktree tabs of the same repo may share a cell (filePath slot = repo name)", () => {
     let { ws, winId } = seeded();
     ws = ops.actionOpenFile(ws, winId, "git-repository", "main", "acme", 0, true);

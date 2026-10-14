@@ -246,7 +246,7 @@ describe("Openp41geTabsEventHandler — command wiring", () => {
 
   // ── Grid open tab (worktree drop) ──────────────────────────────
 
-  it("opens a system-scoped log-viewer tab on a log-system drop", () => {
+  it("opens a system-scoped log-viewer tab on a log-system drop (one tab per stream)", () => {
     const grid = document.createElement("tab-grid");
     (grid as any).winId = "w1";
     grid.style.display = "none";
@@ -268,7 +268,7 @@ describe("Openp41geTabsEventHandler — command wiring", () => {
       "w1",
       "log-viewer",
       "openp41ge",
-      undefined,
+      "log:openp41ge",
       0,
       true,
       { system: "openp41ge" },
@@ -302,7 +302,7 @@ describe("Openp41geTabsEventHandler — command wiring", () => {
       "w1",
       "log-viewer",
       "openp41ge-terminal",
-      undefined,
+      "log:openp41ge-terminal",
       0,
       true,
       { system: "openp41ge-terminal" },
