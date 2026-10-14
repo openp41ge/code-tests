@@ -59,4 +59,9 @@ describe("renderer registration", () => {
     // A tab opened without a name (saved by an earlier version) keeps the generic title.
     expect(spec.tabLabel?.({ path: "/ws/a.openp41ge-workspace" })?.title).toBe("Workspace editor");
   });
+
+  it("needs no workspace open (it edits one by its file)", () => {
+    const spec = renderers!.find((s) => s.id === "workspace-editor") as { workspace?: string };
+    expect(spec.workspace).toBe("none");
+  });
 });
