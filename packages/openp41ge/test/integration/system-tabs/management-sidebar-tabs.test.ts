@@ -1,8 +1,7 @@
 /**
- * The management window's sidebar tabs — Workspaces, Settings, Releases,
- * Cleanup and Migrations — are platform sidebar tabs a workspace window can
- * open, on either side (plans/2026-10-14-one-window.md, step 1). What they
- * open goes into the window's grid: a workspace row opens its editor, a
+ * The management sidebar tabs — Workspaces, Settings, Releases, Cleanup and
+ * Migrations — are platform sidebar tabs a window can open, on either side.
+ * What they open goes into the window's grid: a workspace row opens its editor, a
  * settings row that schema's config editor, a release row the release, all
  * through the grid's `grid-open-tab` open path. Workspace and settings rows
  * also drag, as the platform's `workspace-config` / `config-overrides`

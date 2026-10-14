@@ -1,6 +1,5 @@
 /**
- * A window with no workspace (plans/2026-10-14-one-window.md, step 3) hosts
- * only tabs that need no workspace. Every tab type says which it is
+ * A window with no workspace hosts only tabs that need no workspace. Every tab type says which it is
  * (`workspace: "required" | "none"`, default "required"): the platform's
  * management and log tabs, settings editors, releases and log streams need
  * none; an extension declares it on its surfaces. Such a window's sidebar +

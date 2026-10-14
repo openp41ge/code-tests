@@ -18,7 +18,6 @@ import { TabActivationHistory } from "../../../src/renderer/services/tab-activat
 import { Openp41geTabsEventHandler } from "../../../src/renderer/services/openp41ge-tabs-event-handler";
 
 type FakeContext = {
-  windowType: "workspace" | "manager";
   windowId: string | null;
   workspaceState: {
     subscribe: (cb: (ws: Workspace) => void) => () => void;
@@ -31,7 +30,6 @@ function makeContext(winId: string | null): FakeContext {
   const listeners: Array<(ws: Workspace) => void> = [];
   let current: Workspace | null = null;
   return {
-    windowType: "workspace",
     windowId: winId,
     workspaceState: {
       subscribe: (cb) => {

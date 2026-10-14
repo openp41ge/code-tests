@@ -39,7 +39,10 @@ vi.mock("@openp41ge/renderer/services/extension-contributions", () => ({
 }));
 
 vi.mock("@openp41ge/renderer/services/extension-renderer-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@openp41ge/renderer/services/extension-renderer-runtime")>();
+  const actual =
+    await importOriginal<
+      typeof import("@openp41ge/renderer/services/extension-renderer-runtime")
+    >();
   return { ...actual, loadExtensionRenderers: (...args: unknown[]) => mockLoad(...args) };
 });
 
@@ -60,10 +63,12 @@ describe("registerRendererExtensions", () => {
   });
 
   it("loads the renderer entry and registers derived grid/sidebar registrations", async () => {
-    mockGetActive.mockReturnValue([
-      { id: "demo", version: "2.0.0", renderer: "dist/index.js" },
-    ]);
-    mockLoad.mockResolvedValue({ renderers: [spec("grid"), spec("sidebar")], drag: noDrag, configSchema: null });
+    mockGetActive.mockReturnValue([{ id: "demo", version: "2.0.0", renderer: "dist/index.js" }]);
+    mockLoad.mockResolvedValue({
+      renderers: [spec("grid"), spec("sidebar")],
+      drag: noDrag,
+      configSchema: null,
+    });
 
     await registerRendererExtensions();
 
@@ -88,12 +93,16 @@ describe("registerRendererExtensions", () => {
     const drag = {
       sources: [],
       consumers: [],
-      dropTargets: [{ id: "attach", surface: "grid:grid1", accepts: ["openp41ge/file-path" as const] }],
+      dropTargets: [
+        { id: "attach", surface: "grid:grid1", accepts: ["openp41ge/file-path" as const] },
+      ],
     };
-    mockGetActive.mockReturnValue([
-      { id: "dragger", version: "2.0.0", renderer: "dist/index.js" },
-    ]);
-    mockLoad.mockResolvedValue({ renderers: [spec("grid"), spec("sidebar")], drag, configSchema: null });
+    mockGetActive.mockReturnValue([{ id: "dragger", version: "2.0.0", renderer: "dist/index.js" }]);
+    mockLoad.mockResolvedValue({
+      renderers: [spec("grid"), spec("sidebar")],
+      drag,
+      configSchema: null,
+    });
 
     await registerRendererExtensions();
 
@@ -102,9 +111,7 @@ describe("registerRendererExtensions", () => {
   });
 
   it("still registers surfaces when the drag declarations are rejected", async () => {
-    mockGetActive.mockReturnValue([
-      { id: "baddrag", version: "2.0.0", renderer: "dist/index.js" },
-    ]);
+    mockGetActive.mockReturnValue([{ id: "baddrag", version: "2.0.0", renderer: "dist/index.js" }]);
     mockLoad.mockResolvedValue({
       renderers: [spec("grid")],
       drag: {
@@ -121,9 +128,7 @@ describe("registerRendererExtensions", () => {
   });
 
   it("skips extensions without a renderer entry", async () => {
-    mockGetActive.mockReturnValue([
-      { id: "backend-only", version: "1.0.0" },
-    ]);
+    mockGetActive.mockReturnValue([{ id: "backend-only", version: "1.0.0" }]);
 
     await registerRendererExtensions();
 
@@ -131,9 +136,7 @@ describe("registerRendererExtensions", () => {
   });
 
   it("registers nothing for an extension whose entry fails to load", async () => {
-    mockGetActive.mockReturnValue([
-      { id: "broken", version: "2.0.0", renderer: "dist/index.js" },
-    ]);
+    mockGetActive.mockReturnValue([{ id: "broken", version: "2.0.0", renderer: "dist/index.js" }]);
     mockLoad.mockResolvedValue({ renderers: [], drag: noDrag, configSchema: null, error: "boom" });
 
     await registerRendererExtensions();
@@ -199,15 +202,15 @@ describe("createRendererSurfaceDeps", () => {
 
 describe("createRendererSurfaceDeps — openLog", () => {
   it("opens the Logs window on the error", () => {
-    const openLogsWindow = vi.fn();
+    const openLogs = vi.fn();
     const prev = (window as unknown as { openp41ge?: unknown }).openp41ge;
     (window as unknown as { openp41ge: unknown }).openp41ge = {
       ...(prev as object),
-      windowManager: { openLogsWindow },
+      windowManager: { openLogs },
     };
     try {
       createRendererSurfaceDeps("ext-a", async () => ({})).openLog?.("e-1");
-      expect(openLogsWindow).toHaveBeenCalledWith({ errorId: "e-1" });
+      expect(openLogs).toHaveBeenCalledWith({ errorId: "e-1" });
     } finally {
       (window as unknown as { openp41ge?: unknown }).openp41ge = prev;
     }

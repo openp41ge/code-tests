@@ -1,5 +1,5 @@
 /**
- * Logs in a workspace window (plans/2026-10-14-one-window.md, step 2).
+ * Logs in a window.
  *
  * A log stream is a `log-viewer` grid tab (one per stream). Clicking one of
  * its rows opens that entry's detail drawer over the tab. "Open logs" opens
@@ -18,7 +18,6 @@ import { registerLogSidebarTabs } from "@openp41ge/renderer/apps/log-viewer/side
 import { getSystemTabRegistration } from "@openp41ge/renderer/apps/app-registry";
 import { translateGridOpen } from "@openp41ge/renderer/services/grid-open-translators";
 import { extensionDrag } from "@openp41ge/renderer/services/extension-drag";
-import { logsOpenInPlace } from "../../electron/logs-routing";
 
 const BOOM = {
   timestamp: 5,
@@ -149,13 +148,6 @@ describe("opening logs in the window", () => {
   it("opens nothing for an error no log has", async () => {
     expect(await openLogsInWindow({ errorId: "nope" })).toBe(false);
     expect(rec.opens).toEqual([]);
-  });
-
-  it("main sends a workspace window's request back to it; others open the logs window", () => {
-    expect(logsOpenInPlace("workspace")).toBe(true);
-    expect(logsOpenInPlace("manager")).toBe(false);
-    expect(logsOpenInPlace("logs")).toBe(false);
-    expect(logsOpenInPlace(null)).toBe(false);
   });
 });
 

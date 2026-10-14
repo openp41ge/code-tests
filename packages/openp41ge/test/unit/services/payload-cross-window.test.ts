@@ -18,10 +18,11 @@ const data: PayloadDragData = {
 };
 
 const windows: WindowSummary[] = [
-  { windowId: "w1", windowType: "workspace", workspacePath: "/ws/a" },
-  { windowId: "w2", windowType: "workspace", workspacePath: "/ws/a" },
-  { windowId: "w3", windowType: "workspace", workspacePath: "/ws/b" },
-  { windowId: "m1", windowType: "manager", workspacePath: null },
+  { windowId: "w1", workspacePath: "/ws/a" },
+  { windowId: "w2", workspacePath: "/ws/a" },
+  { windowId: "w3", workspacePath: "/ws/b" },
+  { windowId: "n1", workspacePath: null },
+  { windowId: "n2", workspacePath: null },
 ];
 
 const resolve = vi.fn(() => ({ appType: "file-viewer", tabConfig: { filePath: "/r/a.ts" } }));
@@ -85,10 +86,34 @@ describe("resolveCrossWindowPayloadDrop", () => {
     });
   });
 
-  it("does nothing over a window whose context the source does not allow", () => {
-    expect(run({ windowId: "m1", target: { type: "grid-move", winId: "m1", col: 0 } })).toEqual({
+  it("does nothing over a window with no workspace", () => {
+    expect(run({ windowId: "n1", target: { type: "grid-move", winId: "n1", col: 0 } })).toEqual({
       kind: "none",
     });
+  });
+
+  it("opens in another window with no workspace, from one (they share a state)", () => {
+    expect(
+      resolveCrossWindowPayloadDrop({
+        check: { windowId: "n2", target: { type: "grid-move", winId: "n2", col: 0 } } as never,
+        myWinId: "n1",
+        windows,
+        data,
+        resolve,
+      }).kind,
+    ).toBe("open");
+  });
+
+  it("does nothing when the source's contexts allow no window", () => {
+    expect(
+      run(
+        { windowId: "w2", target: { type: "grid-move", winId: "w2", col: 0 } },
+        {
+          ...data,
+          contexts: [] as never,
+        },
+      ),
+    ).toEqual({ kind: "none" });
   });
 
   it("does nothing for a non-cross-window source", () => {
@@ -115,7 +140,7 @@ describe("resolveCrossWindowPayloadDrop", () => {
 
   it("does nothing over a non-grid part of another window", () => {
     expect(run({ windowId: "w2", target: null })).toEqual({ kind: "none" });
-    expect(run({ windowId: "w2", target: { type: "manager-tab-bar", dropIndex: 0 } })).toEqual({
+    expect(run({ windowId: "w2", target: { type: "sidebar", dropIndex: 0 } })).toEqual({
       kind: "none",
     });
   });

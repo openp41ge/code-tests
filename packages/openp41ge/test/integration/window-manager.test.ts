@@ -23,6 +23,9 @@ vi.mock("electron", () => {
     focus(): void {
       this._focused = true;
     }
+    static getFocusedWindow(): null {
+      return null;
+    }
   }
   return {
     app: { isPackaged: true },
@@ -41,6 +44,8 @@ import {
   focusWorkspaceWindow,
   closeOrphanedWindows,
   setDispatcher,
+  openLogs,
+  openSidebarTab,
 } from "../../electron/window-manager.js";
 import type { BrowserWindow } from "electron";
 
@@ -63,7 +68,8 @@ function makeWindow(): AnyWin {
     close(): void {
       win._destroyed = true;
     },
-  };
+    webContents: { send: vi.fn() },
+  } as unknown as AnyWin;
   return win;
 }
 
@@ -75,14 +81,14 @@ describe("focusWorkspaceWindow", () => {
 
   it("returns false when no live window is bound to the workspace path", () => {
     openp41geWindows.set("w1", makeWindow());
-    openp41geWindowMeta.set("w1", { windowType: "workspace", workspacePath: "/a" });
+    openp41geWindowMeta.set("w1", { workspacePath: "/a" });
     expect(focusWorkspaceWindow("/b")).toBe(false);
   });
 
   it("focuses the first live workspace window for the path and returns true", () => {
     const w = makeWindow();
     openp41geWindows.set("w1", w as BrowserWindow);
-    openp41geWindowMeta.set("w1", { windowType: "workspace", workspacePath: "/a" });
+    openp41geWindowMeta.set("w1", { workspacePath: "/a" });
     expect(focusWorkspaceWindow("/a")).toBe(true);
     expect(w._focused).toBe(true);
   });
@@ -90,15 +96,15 @@ describe("focusWorkspaceWindow", () => {
   it("skips destroyed windows", () => {
     const w = makeWindow();
     openp41geWindows.set("w1", w as BrowserWindow);
-    openp41geWindowMeta.set("w1", { windowType: "workspace", workspacePath: "/a" });
+    openp41geWindowMeta.set("w1", { workspacePath: "/a" });
     (w as { _destroyed: boolean })._destroyed = true;
     expect(focusWorkspaceWindow("/a")).toBe(false);
   });
 
-  it("only matches workspace windows, not the manager window", () => {
+  it("does not match a window with no workspace", () => {
     const w = makeWindow();
-    openp41geWindows.set("wm", w as BrowserWindow);
-    openp41geWindowMeta.set("wm", { windowType: "manager", workspacePath: null });
+    openp41geWindows.set("w0", w as BrowserWindow);
+    openp41geWindowMeta.set("w0", { workspacePath: null });
     expect(focusWorkspaceWindow("/a")).toBe(false);
   });
 });
@@ -112,30 +118,81 @@ describe("closeOrphanedWindows", () => {
     } as never);
   });
 
-  it("only closes workspace windows that are absent from the layout", () => {
-    const logs = makeWindow();
-    const wm = makeWindow();
+  it("closes only the windows of that state that are absent from its layout", () => {
+    const other = makeWindow();
+    const unbound = makeWindow();
     const wsActive = makeWindow();
     const wsOrphan = makeWindow();
 
-    openp41geWindows.set("logs-1", logs as BrowserWindow);
-    openp41geWindowMeta.set("logs-1", { windowType: "logs", workspacePath: null });
-    openp41geWindows.set("wm", wm as BrowserWindow);
-    openp41geWindowMeta.set("wm", { windowType: "manager", workspacePath: null });
+    openp41geWindows.set("other", other as BrowserWindow);
+    openp41geWindowMeta.set("other", { workspacePath: "/b" });
+    openp41geWindows.set("unbound", unbound as BrowserWindow);
+    openp41geWindowMeta.set("unbound", { workspacePath: null });
     openp41geWindows.set("ws-active", wsActive as BrowserWindow);
-    openp41geWindowMeta.set("ws-active", { windowType: "workspace", workspacePath: "/a" });
+    openp41geWindowMeta.set("ws-active", { workspacePath: "/a" });
     openp41geWindows.set("ws-orphan", wsOrphan as BrowserWindow);
-    openp41geWindowMeta.set("ws-orphan", { windowType: "workspace", workspacePath: "/a" });
+    openp41geWindowMeta.set("ws-orphan", { workspacePath: "/a" });
 
-    closeOrphanedWindows();
+    closeOrphanedWindows("/a");
 
-    // Logs + manager + still-active workspace windows survive; the
-    // orphaned workspace window (absent from the layout) is closed. This guards
-    // the bug where a workspace shortcut fired from the Logs window dispatched
-    // a layout command, ran orphan cleanup, and closed the Logs window.
-    expect(logs.isDestroyed()).toBe(false);
-    expect(wm.isDestroyed()).toBe(false);
+    // Windows of another workspace, or of none, are not this layout's.
+    expect(other.isDestroyed()).toBe(false);
+    expect(unbound.isDestroyed()).toBe(false);
     expect(wsActive.isDestroyed()).toBe(false);
     expect(wsOrphan.isDestroyed()).toBe(true);
+  });
+
+  it("for the no-workspace state, never closes a window that shows a workspace", () => {
+    const bound = makeWindow();
+    const unboundOrphan = makeWindow();
+    openp41geWindows.set("bound", bound as BrowserWindow);
+    openp41geWindowMeta.set("bound", { workspacePath: "/a" });
+    openp41geWindows.set("u-orphan", unboundOrphan as BrowserWindow);
+    openp41geWindowMeta.set("u-orphan", { workspacePath: null });
+
+    closeOrphanedWindows(null);
+
+    expect(bound.isDestroyed()).toBe(false);
+    expect(unboundOrphan.isDestroyed()).toBe(true);
+  });
+});
+
+describe("app-level actions act on a window (there is no management or logs window)", () => {
+  beforeEach(() => {
+    openp41geWindows.clear();
+    openp41geWindowMeta.clear();
+  });
+
+  it("opening logs opens them in the given window", () => {
+    const w = makeWindow();
+    openp41geWindows.set("w1", w as BrowserWindow);
+    openp41geWindowMeta.set("w1", { workspacePath: "/a" });
+    openLogs(w as BrowserWindow, "e-1");
+    expect(
+      (w.webContents as unknown as { send: ReturnType<typeof vi.fn> }).send,
+    ).toHaveBeenCalledWith("logs:open-in-window", "e-1");
+    expect(w._focused).toBe(true);
+  });
+
+  it("with no window given, any open window opens them", () => {
+    const w = makeWindow();
+    openp41geWindows.set("w1", w as BrowserWindow);
+    openp41geWindowMeta.set("w1", { workspacePath: null });
+    openLogs(undefined);
+    expect(
+      (w.webContents as unknown as { send: ReturnType<typeof vi.fn> }).send,
+    ).toHaveBeenCalledWith("logs:open-in-window", null);
+  });
+
+  it("Settings opens as a sidebar tab in the window", () => {
+    const apply = vi.fn();
+    const broadcast = vi.fn();
+    setDispatcher({ getWorkspace: () => ({ windows: [] }), apply, broadcast } as never);
+    const w = makeWindow();
+    openp41geWindows.set("w1", w as BrowserWindow);
+    openp41geWindowMeta.set("w1", { workspacePath: null });
+    openSidebarTab("settings", "Settings", w as BrowserWindow);
+    expect(apply).toHaveBeenCalledWith("openSystemTab", ["w1", "left", "settings", "Settings"]);
+    expect(broadcast).toHaveBeenCalled();
   });
 });

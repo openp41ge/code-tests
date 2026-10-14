@@ -8,18 +8,21 @@ import { describe, it, expect, vi } from "vitest";
 const emitEvent = vi.fn();
 vi.mock("@openp41ge/renderer/app", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 
-const { RegisterShortcutsStep } = await import(
-  "@openp41ge/renderer/bootstrap/steps/register-shortcuts.step"
-);
+const { RegisterShortcutsStep } =
+  await import("@openp41ge/renderer/bootstrap/steps/register-shortcuts.step");
 
 describe("Cmd+Shift+H", () => {
   it("opens Git History Search in the right sidebar", async () => {
-    const registered: Array<{ key: string; modifiers: number; description: string; handler: () => void }> = [];
+    const registered: Array<{
+      key: string;
+      modifiers: number;
+      description: string;
+      handler: () => void;
+    }> = [];
     (window as unknown as { openp41ge: unknown }).openp41ge = {
       workspace: { getWindowId: () => "win-1" },
     };
     await new RegisterShortcutsStep().run({
-      windowType: "workspace",
       keyboardManager: { register: (s: (typeof registered)[number]) => registered.push(s) },
     } as never);
     const shortcut = registered.find((s) => s.key === "h" && s.modifiers === 12)!;

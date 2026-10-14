@@ -1,6 +1,5 @@
 /**
- * Switching a window's workspace (plans/2026-10-14-one-window.md, step 4):
- * the window replaces the workspace it shows.
+ * Switching a window's workspace: the window replaces the workspace it shows.
  *
  * Its old state: a window with no workspace drops its in-memory tabs; a
  * workspace window still open elsewhere leaves that workspace (its layout

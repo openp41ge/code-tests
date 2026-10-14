@@ -1,7 +1,6 @@
 /**
- * The top bar's workspace name (plans/2026-10-14-one-window.md, step 4) is a
- * button opening the workspace picker: every workspace (the window's own
- * marked), filtered as you type. Picking one replaces the window's workspace;
+ * The top bar's workspace name is a button opening the workspace picker:
+ * every workspace (the window's own marked), filtered as you type. Picking one replaces the window's workspace;
  * "No workspace" closes it. With unsaved files in the window it asks first.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";

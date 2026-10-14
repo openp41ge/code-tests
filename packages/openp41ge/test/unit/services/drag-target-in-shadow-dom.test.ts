@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The drag system finds a drop target (a grid, or a cell's tab bar) under the
- * cursor even when the grid is inside shadow roots. The manager window's grid
- * is: <openp41ge-window-manager> → <openp41ge-manager-grid> → <tab-grid>. A
- * plain `document.elementFromPoint` stops at the outermost host, so a grid tab
- * dragged there found no grid and could not land in a new cell.
+ * cursor even when the grid is inside shadow roots (e.g. a host component →
+ * its grid component → <tab-grid>). A plain `document.elementFromPoint` stops
+ * at the outermost host, so a grid tab dragged there found no grid and could
+ * not land in a new cell.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { openp41geTargetResolver } from "@openp41ge/renderer/services/init-drag-system";
