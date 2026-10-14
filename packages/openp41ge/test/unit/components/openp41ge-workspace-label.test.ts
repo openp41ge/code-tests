@@ -94,6 +94,18 @@ describe("workspace label and picker", () => {
     expect(button).not.toMatch(/(^|;)\s*color:\s*var\(--accent-error/);
   });
 
+  it("a hovered row is a card inside the list, not an edge-to-edge row", async () => {
+    const el = await mount(deps());
+    await open(el);
+    const css = document.head.querySelector("style[data-openp41ge-workspace-label]")!.textContent!;
+    const rule = (sel: string) =>
+      css.match(new RegExp(`${sel.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+    // The list insets its rows (as the filter and the close button are)…
+    expect(rule("openp41ge-workspace-label .wl-list")).toMatch(/padding:\s*0 8px/);
+    // …and each row is rounded, so its hover background reads as a card.
+    expect(rule("openp41ge-workspace-label .wl-item")).toMatch(/border-radius:\s*5px/);
+  });
+
   it("a window with no workspace offers no close button", async () => {
     const el = await mount(deps({ current: () => ({ path: null, name: "No workspace" }) }));
     await open(el);
