@@ -120,7 +120,7 @@ describe("a window with no workspace", () => {
     document.body.appendChild(sidebar);
     await sidebar.updateComplete;
     sidebar._onAddTabClick();
-    const menu = document.querySelector("openp41ge-contextmenu") as unknown as {
+    const menu = document.querySelector("openp41ge-sidebar-tab-picker") as unknown as {
       items: Array<{ label?: string }>;
     };
     return menu.items.map((i) => i.label ?? "");

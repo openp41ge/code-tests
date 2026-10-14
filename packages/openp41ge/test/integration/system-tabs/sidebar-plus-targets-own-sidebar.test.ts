@@ -38,9 +38,9 @@ describe("Sidebar ＋ open-tab menu targets the hosting sidebar", () => {
   afterEach(() => {
     (window as unknown as { openp41ge: unknown }).openp41ge = ORIG_OPENP41GE;
     host.remove();
-    // Each `_onAddTabClick` appends a fresh <openp41ge-contextmenu> to
+    // Each `_onAddTabClick` appends a fresh <openp41ge-sidebar-tab-picker> to
     // document.body; clean them up so a later test doesn't re-read a stale one.
-    for (const menu of document.querySelectorAll("openp41ge-contextmenu")) menu.remove();
+    for (const menu of document.querySelectorAll("openp41ge-sidebar-tab-picker")) menu.remove();
   });
 
   type SidebarEl = HTMLElement & {
@@ -69,7 +69,7 @@ describe("Sidebar ＋ open-tab menu targets the hosting sidebar", () => {
    */
   function clickPanel(sidebar: SidebarEl): void {
     sidebar._onAddTabClick();
-    const menu = document.querySelector("openp41ge-contextmenu") as unknown as {
+    const menu = document.querySelector("openp41ge-sidebar-tab-picker") as unknown as {
       items: Array<{ label?: string; action?: () => void }>;
     };
     const item = menu.items.find((i) => i.label === "Panel");
