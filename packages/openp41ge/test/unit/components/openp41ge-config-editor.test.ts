@@ -52,11 +52,15 @@ function fakeBridge(overrides: Record<string, unknown> = { model: "llama" }) {
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
+/** Mount the editor in its JSON view (these tests are about the JSON view;
+ *  the form view's are in openp41ge-config-editor-form.test.ts). */
 async function mount(bridge: ExtensionConfigBridge, extensionId = "demo") {
   const el = document.createElement("openp41ge-config-editor") as Openp41geConfigEditor;
   el.bridge = bridge;
   el.extensionId = extensionId;
   document.body.appendChild(el);
+  await tick();
+  (el.querySelector('[aria-label="Edit as JSON"]') as HTMLButtonElement | null)?.click();
   await tick();
   return el;
 }
