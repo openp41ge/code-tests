@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The workspace editor's first content row is a row of buttons; the first is
- * Open, which opens (or focuses) the edited workspace's window through the
- * platform (`host.workspace.openWindow`). It shows in both views.
+ * The workspace editor has no button row: no Open button (a workspace is
+ * opened from the title bar's picker, in the window). Its content is the
+ * first thing in the editor body, in both views.
  */
 import { describe, it, expect, vi } from "vitest";
 import { render } from "lit";
@@ -43,28 +43,14 @@ function mount(mode: "ui" | "json") {
   return { container, openWindow };
 }
 
-describe("workspace editor toolbar", () => {
+describe("workspace editor (no button row)", () => {
   for (const mode of ["ui", "json"] as const) {
-    it(`${mode} view: the first content row is the buttons row, Open first`, () => {
+    it(`${mode} view: no Open button, no button row`, () => {
       const { container } = mount(mode);
-      const body = container.querySelector(".we-body")!;
-      const first = body.firstElementChild!;
-      expect(first.classList.contains("we-toolbar")).toBe(true);
-      const buttons = [...first.querySelectorAll("button")];
-      expect(buttons[0]?.dataset.action).toBe("open-window");
-      expect(buttons[0]?.textContent?.trim()).toBe("Open");
+      expect(container.querySelector(".we-toolbar")).toBeNull();
+      expect(container.querySelector('[data-action="open-window"]')).toBeNull();
+      const first = container.querySelector(".we-body")!.firstElementChild!;
+      expect(first.classList.contains(mode === "json" ? "we-json" : "we-ui")).toBe(true);
     });
   }
-
-  it("the buttons sit at the right of the row", () => {
-    const { container } = mount("ui");
-    const css = [...container.querySelectorAll("style")].map((s) => s.textContent).join("\n");
-    expect(css).toMatch(/\.we-toolbar\s*\{[^}]*justify-content:\s*flex-end;/);
-  });
-
-  it("Open opens the edited workspace's window", () => {
-    const { container, openWindow } = mount("ui");
-    container.querySelector<HTMLElement>('[data-action="open-window"]')!.click();
-    expect(openWindow).toHaveBeenCalledWith("/w.json");
-  });
 });
