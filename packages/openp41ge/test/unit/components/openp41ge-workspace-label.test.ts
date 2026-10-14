@@ -1,7 +1,8 @@
 /**
  * The top bar's workspace name is a button opening the workspace picker:
- * every workspace (the window's own marked), filtered as you type. Picking one replaces the window's workspace;
- * "No workspace" closes it. With unsaved files in the window it asks first.
+ * every workspace (the window's own marked), filtered as you type. Picking
+ * one replaces the window's workspace; a red "Close workspace" button closes
+ * it. With unsaved files in the window it asks first.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
@@ -56,17 +57,26 @@ describe("workspace label and picker", () => {
     expect(el.querySelector(".wl-button")?.textContent?.trim()).toBe("Alpha");
   });
 
-  it("lists every workspace, the window's own marked; and No workspace", async () => {
+  it("lists every workspace, the window's own marked", async () => {
     const el = await mount(deps());
     await open(el);
-    expect(items(el)).toEqual(["Alpha", "Beta", "No workspace"]);
+    expect(items(el)).toEqual(["Alpha", "Beta"]);
     expect(el.querySelector(".wl-item--current")?.textContent?.trim()).toBe("Alpha");
   });
 
-  it("a window with no workspace offers no 'No workspace'", async () => {
+  it("offers to close the window's workspace with a button, not a row", async () => {
+    const el = await mount(deps());
+    await open(el);
+    const close = el.querySelector<HTMLButtonElement>("button.wl-close");
+    expect(close?.textContent?.trim()).toBe("Close workspace");
+    expect(close?.closest(".wl-list")).toBeNull();
+  });
+
+  it("a window with no workspace offers no close button", async () => {
     const el = await mount(deps({ current: () => ({ path: null, name: "No workspace" }) }));
     await open(el);
     expect(items(el)).toEqual(["Alpha", "Beta"]);
+    expect(el.querySelector(".wl-close")).toBeNull();
   });
 
   it("filters as you type", async () => {
@@ -89,11 +99,11 @@ describe("workspace label and picker", () => {
     expect(d.confirm).not.toHaveBeenCalled();
   });
 
-  it("No workspace closes the window's workspace", async () => {
+  it("Close workspace closes the window's workspace", async () => {
     const d = deps();
     const el = await mount(d);
     await open(el);
-    [...el.querySelectorAll<HTMLElement>(".wl-item")][2].click();
+    el.querySelector<HTMLButtonElement>("button.wl-close")!.click();
     await flush();
     expect(d.switchTo).toHaveBeenCalledWith(null);
   });
