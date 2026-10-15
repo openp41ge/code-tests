@@ -243,7 +243,10 @@ describe("json-form fields", () => {
     for (const input of root.querySelectorAll("input, openp41ge-select"))
       expect(input.disabled).toBe(true);
     expect(control(root, "enabled").disabled).toBe(true);
-    expect(root.querySelector("button:not([disabled]):not(.jf-drawer-close)")).toBeNull();
+    // Closing a drawer and switching its view are for looking: still on.
+    expect(
+      root.querySelector("button:not([disabled]):not(.jf-drawer-close):not(.jf-foot-btn)"),
+    ).toBeNull();
   });
 
   it("emits a bubbling, composed json-form-change", async () => {
@@ -583,7 +586,8 @@ describe("json-form drawers", () => {
     const { el, root } = await mountDeep();
     const d = await open(el, root, "a");
     const close = d.querySelector(".jf-drawer-close");
-    const last = card(root, "a.b");
+    // The last control is the bottom bar's JSON view button.
+    const last = d.querySelector('.jf-drawer-foot button[aria-label="JSON view"]');
     last.focus();
     last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, composed: true }));
     expect(root.activeElement).toBe(close);
@@ -728,5 +732,110 @@ describe("json-form maps", () => {
     expect(input.value).toBe("low");
     await typeInto(el, input, "");
     expect(changes.at(-1)).toEqual({ levels: { Low: null } });
+  });
+});
+
+describe("json-form drawer views", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      hosts: {
+        type: "object",
+        title: "Hosts",
+        default: { a: { url: "a.example" } },
+        additionalProperties: {
+          type: "object",
+          properties: { url: { type: "string", title: "URL" } },
+        },
+      },
+    },
+  };
+  const defaults = { hosts: { a: { url: "a.example" } } };
+  const mountHosts = (value = {}) => mount({ schema, defaults, value });
+  const viewButton = (d, label) => d.querySelector(`.jf-drawer-foot button[aria-label="${label}"]`);
+  const editorIn = (d) => d.querySelector("json-editor");
+
+  it("every drawer has a bottom bar: Form view (pressed) and JSON view", async () => {
+    const { el, root } = await mountHosts();
+    const d = await open(el, root, "hosts");
+    expect(viewButton(d, "Form view").getAttribute("aria-pressed")).toBe("true");
+    expect(viewButton(d, "JSON view").getAttribute("aria-pressed")).toBe("false");
+    expect(editorIn(d)).toBeNull();
+  });
+
+  it("JSON view: the drawer's value in a JSON editor, its defaults shown", async () => {
+    const { el, root } = await mountHosts({ hosts: { b: { url: "b.example" } } });
+    const d = await open(el, root, "hosts");
+    viewButton(d, "JSON view").click();
+    await el.updateComplete;
+    const editor = editorIn(drawer(root, "hosts"));
+    expect(editor).not.toBeNull();
+    expect(editor.value).toEqual({ a: { url: "a.example" }, b: { url: "b.example" } });
+    expect(editor.showDefaults).toBe(true);
+    expect(editor.defaults).toEqual({ a: { url: "a.example" } });
+    expect(viewButton(drawer(root, "hosts"), "JSON view").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(drawer(root, "hosts").querySelector(".jf-sub")).toBeNull();
+  });
+
+  it("an edit in the JSON view stores only what differs from the defaults", async () => {
+    const { el, root, changes } = await mountHosts();
+    const d = await open(el, root, "hosts");
+    viewButton(d, "JSON view").click();
+    await el.updateComplete;
+    editorIn(drawer(root, "hosts")).dispatchEvent(
+      new CustomEvent("json-editor-change", {
+        detail: { value: { a: { url: "a.example" }, c: { url: "c.example" } } },
+      }),
+    );
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ hosts: { c: { url: "c.example" } } });
+    // Back to only the defaults: the setting is reset.
+    editorIn(drawer(root, "hosts")).dispatchEvent(
+      new CustomEvent("json-editor-change", { detail: { value: { a: { url: "a.example" } } } }),
+    );
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({});
+  });
+
+  it("an overwrite in the JSON view sets that value inside the drawer's", async () => {
+    const { el, root, changes } = await mountHosts({ hosts: { b: { url: "b.example" } } });
+    const d = await open(el, root, "hosts");
+    viewButton(d, "JSON view").click();
+    await el.updateComplete;
+    editorIn(drawer(root, "hosts")).dispatchEvent(
+      new CustomEvent("json-editor-overwrite", { detail: { path: ["b", "url"], value: "z" } }),
+    );
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ hosts: { b: { url: "z" } } });
+  });
+
+  it("Form view switches back; each drawer keeps its own view; a reopened drawer is a form", async () => {
+    const { el, root } = await mountHosts();
+    await open(el, root, "hosts");
+    await open(el, root, "hosts.a");
+    viewButton(drawer(root, "hosts.a"), "JSON view").click();
+    await el.updateComplete;
+    expect(editorIn(drawer(root, "hosts.a"))).not.toBeNull();
+    expect(editorIn(drawer(root, "hosts"))).toBeNull();
+    viewButton(drawer(root, "hosts.a"), "Form view").click();
+    await el.updateComplete;
+    expect(editorIn(drawer(root, "hosts.a"))).toBeNull();
+    viewButton(drawer(root, "hosts.a"), "JSON view").click();
+    await el.updateComplete;
+    drawer(root, "hosts.a").querySelector(".jf-drawer-close").click();
+    await el.updateComplete;
+    await open(el, root, "hosts.a");
+    expect(editorIn(drawer(root, "hosts.a"))).toBeNull();
+  });
+
+  it("the bar matches the tab's bottom bar; its corner button moves in from the window's corner", async () => {
+    const { el } = await mountHosts();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-drawer-foot\s*\{[^}]*height: 34px/);
+    expect(css).toMatch(
+      /\.jf-foot-btn:last-child\s*\{[^}]*padding-right: var\(--grid-edge-right-pad, 0px\)/,
+    );
   });
 });
