@@ -7,7 +7,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
 
 // Mock window.openp41ge.config before importing ConfigService
-const mockConfig = {
+const mockConfig: { appTheme: string } & Record<string, unknown> = {
   version: 1,
   appTheme: "dark",
   lineHeight: 20,
@@ -63,6 +63,7 @@ let dispatchedEvents: Array<{ type: string; detail: any }> = [];
 
 // Now import
 import { ConfigService } from "@openp41ge/renderer/services/config-service";
+import { GLOBAL_SETTINGS_SCHEMA } from "@openp41ge/renderer/models/global-settings-schema";
 
 let configService: ConfigService;
 
@@ -228,6 +229,114 @@ describe("ConfigService (renderer)", () => {
     expect(value).toBe("dark");
 
     document.documentElement.setAttribute = origSetAttribute;
+  });
+});
+
+describe("ConfigService (renderer) — the system theme", () => {
+  /** A stand-in for the OS colour scheme, switched by the test. */
+  class FakeScheme {
+    dark = true;
+    private _listeners = new Set<() => void>();
+    isDark(): boolean {
+      return this.dark;
+    }
+    onChange(fn: () => void): () => void {
+      this._listeners.add(fn);
+      return () => this._listeners.delete(fn);
+    }
+    switchTo(dark: boolean): void {
+      this.dark = dark;
+      for (const fn of this._listeners) fn();
+    }
+  }
+
+  let applied: string[];
+  let origSetAttribute: typeof document.documentElement.setAttribute;
+  beforeEach(() => {
+    applied = [];
+    origSetAttribute = document.documentElement.setAttribute;
+    document.documentElement.setAttribute = (attr: string, val: string) => {
+      if (attr === "data-app-theme") applied.push(val);
+    };
+  });
+  afterEach(() => {
+    document.documentElement.setAttribute = origSetAttribute;
+    mockConfig.appTheme = "dark";
+  });
+
+  test('the appTheme setting offers "system" next to "dark" and "light"', () => {
+    const props = GLOBAL_SETTINGS_SCHEMA.properties as unknown as Record<
+      string,
+      { enum?: unknown[] }
+    >;
+    expect(props.appTheme.enum).toEqual(["system", "dark", "light"]);
+  });
+
+  test('"system" applies the OS colour scheme', async () => {
+    mockConfig.appTheme = "system";
+    const scheme = new FakeScheme();
+    scheme.dark = false;
+    const service = new ConfigService(scheme);
+    await service.load();
+    expect(service.getAppTheme()).toBe("system");
+    expect(service.getResolvedAppTheme()).toBe("light");
+    service.applyAppTheme();
+    expect(applied).toEqual(["light"]);
+  });
+
+  test('"system" follows the OS colour scheme as it changes', async () => {
+    mockConfig.appTheme = "system";
+    const scheme = new FakeScheme();
+    const service = new ConfigService(scheme);
+    await service.load();
+    service.applyAppTheme();
+    scheme.switchTo(false);
+    scheme.switchTo(true);
+    expect(applied).toEqual(["dark", "light", "dark"]);
+  });
+
+  test("a chosen theme ignores the OS colour scheme", async () => {
+    mockConfig.appTheme = "dark";
+    const scheme = new FakeScheme();
+    const service = new ConfigService(scheme);
+    await service.load();
+    service.applyAppTheme();
+    scheme.switchTo(false);
+    expect(applied).toEqual(["dark"]);
+    expect(service.getResolvedAppTheme()).toBe("dark");
+  });
+
+  test('switching to "system" from another window applies the OS colour scheme', async () => {
+    const scheme = new FakeScheme();
+    scheme.dark = false;
+    const service = new ConfigService(scheme);
+    await service.load();
+    service.applyAppTheme();
+    onChangedHandler!({ key: "appTheme", value: "system" });
+    service.applyAppTheme();
+    expect(applied).toEqual(["dark", "light"]);
+    // ...and follows it from then on.
+    scheme.switchTo(true);
+    expect(applied).toEqual(["dark", "light", "dark"]);
+  });
+
+  test("an unset theme is dark", async () => {
+    const service = new ConfigService(new FakeScheme());
+    await service.load();
+    onChangedHandler!({ key: "appTheme", value: undefined });
+    expect(service.getAppTheme()).toBe("dark");
+  });
+
+  test("applying the theme again does not follow the OS colour scheme twice", async () => {
+    mockConfig.appTheme = "system";
+    const scheme = new FakeScheme();
+    const service = new ConfigService(scheme);
+    await service.load();
+    service.applyAppTheme();
+    service.applyAppTheme();
+    applied = [];
+    scheme.switchTo(false);
+    expect(applied).toEqual(["light"]);
   });
 });
 
