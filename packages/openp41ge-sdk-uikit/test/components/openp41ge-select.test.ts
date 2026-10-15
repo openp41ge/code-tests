@@ -136,4 +136,12 @@ describe("openp41ge-select", () => {
     await el.updateComplete;
     expect(list(root)).toBeNull();
   });
+
+  it("noTab: out of the tab order (still clickable)", async () => {
+    const { el, root } = await mount({ noTab: true });
+    expect(trigger(root).tabIndex).toBe(-1);
+    trigger(root).click();
+    await el.updateComplete;
+    expect(list(root)).not.toBeNull();
+  });
 });

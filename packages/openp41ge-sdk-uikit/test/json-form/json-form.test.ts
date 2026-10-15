@@ -728,19 +728,20 @@ describe("json-form drawers", () => {
     expect(el.drawersOpen).toBe(false);
   });
 
-  it("Tab stays in the front drawer: past its last control to its first, and back", async () => {
+  it("Tab in a drawer does nothing: focus stays where it is (the drawer blocks the cell)", async () => {
     const { el, root } = await mountDeep();
     const d = await open(el, root, "a");
     const close = d.querySelector(".jf-drawer-close");
-    // The last control is the bottom bar's JSON view button.
-    const last = d.querySelector('.jf-drawer-foot button[aria-label="JSON view"]');
-    last.focus();
-    last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, composed: true }));
+    close.focus();
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
+    close.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
     expect(root.activeElement).toBe(close);
-    close.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, composed: true }),
-    );
-    expect(root.activeElement).toBe(last);
   });
 
   it("the head is one line as tall as the tab bar it covers: the drawer's name", async () => {
@@ -1101,5 +1102,37 @@ describe("json-form grouped settings", () => {
       defaults: {},
     });
     expect(root.querySelector(".jf-sub-group")).toBeNull();
+  });
+});
+
+describe("json-form focus", () => {
+  it("nothing in the form or its drawers is in the tab order", async () => {
+    const { el, root } = await mount({
+      value: { size: 5, tags: ["a"], hosts: [{ url: "x" }] },
+      drawerArea: null,
+    });
+    await open(el, root, "tags");
+    root.querySelector(".jf-mask").click();
+    await el.updateComplete;
+    await open(el, root, "hosts");
+    await open(el, root, "hosts[0]");
+    const focusable = [
+      ...root.querySelectorAll("input, button, textarea, select, [tabindex], [role=button]"),
+    ];
+    expect(focusable.length).toBeGreaterThan(5);
+    for (const node of focusable)
+      expect([node.outerHTML.slice(0, 60), node.tabIndex]).toEqual([
+        node.outerHTML.slice(0, 60),
+        -1,
+      ]);
+    for (const select of root.querySelectorAll("openp41ge-select")) expect(select.noTab).toBe(true);
+    for (const toggle of root.querySelectorAll("openp41ge-toggle")) expect(toggle.noTab).toBe(true);
+  });
+
+  it("no focus outline on anything in the form", async () => {
+    const { el } = await mount();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\*:focus,\s*\*:focus-visible\s*\{[^}]*outline: none/);
+    expect(css).not.toMatch(/:focus-visible\s*\{[^}]*outline: 1px solid/);
   });
 });
