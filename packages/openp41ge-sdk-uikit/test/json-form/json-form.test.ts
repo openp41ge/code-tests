@@ -19,6 +19,7 @@ const schema = {
     enabled: { type: "boolean", title: "Enabled", default: true },
     size: { type: "integer", title: "Size", minimum: 1, maximum: 9, default: 3 },
     mode: { enum: ["fast", "safe"], title: "Mode", default: "safe" },
+    ratio: { type: "number", title: "Ratio" },
     name: { type: "string", title: "Name", description: "Shown **bold**" },
     apiKey: { type: "string", title: "API key", secret: true },
     tags: { type: "array", title: "Tags", items: { type: "string" } },
@@ -177,14 +178,69 @@ describe("json-form fields", () => {
     expect(changes.at(-1)).toEqual({ enabled: false });
   });
 
-  it("number: bounds and integer step; typing sets it, clearing resets it", async () => {
+  it("number: a text field (not a number field); typing a number sets it, clearing resets it", async () => {
     const { el, root, changes } = await mount({ value: { size: 5 } });
     const input = control(root, "size");
-    expect([input.type, input.min, input.max, input.step]).toEqual(["number", "1", "9", "1"]);
+    expect(input.type).toBe("text");
+    expect(input.inputMode).toBe("numeric");
     await typeInto(el, input, "7");
     expect(changes.at(-1)).toEqual({ size: 7 });
     await typeInto(el, input, "");
     expect(changes.at(-1)).toEqual({});
+  });
+
+  it("number: text that is not a whole number stays, marked, and is not stored", async () => {
+    const { el, root, changes } = await mount({ value: { size: 5 } });
+    await typeInto(el, control(root, "size"), "7a");
+    expect(changes).toEqual([]);
+    expect(control(root, "size").value).toBe("7a");
+    expect(control(root, "size").getAttribute("aria-invalid")).toBe("true");
+    expect(fieldOf(root, "size").querySelector(".jf-error").textContent).toContain(
+      "Enter a whole number",
+    );
+    await typeInto(el, control(root, "size"), "1.5");
+    expect(changes).toEqual([]);
+    await typeInto(el, control(root, "size"), "8");
+    expect(changes.at(-1)).toEqual({ size: 8 });
+    expect(control(root, "size").getAttribute("aria-invalid")).toBe("false");
+    expect(fieldOf(root, "size").querySelector(".jf-error")).toBeNull();
+  });
+
+  it("number (not integer): decimals and negatives are numbers; other text is not", async () => {
+    const { el, root, changes } = await mount();
+    const input = () => control(root, "ratio");
+    expect(input().type).toBe("text");
+    expect(input().inputMode).toBe("decimal");
+    await typeInto(el, input(), "-1.5");
+    expect(changes.at(-1)).toEqual({ ratio: -1.5 });
+    await typeInto(el, input(), "1.5.2");
+    expect(changes.at(-1)).toEqual({ ratio: -1.5 });
+    expect(fieldOf(root, "ratio").querySelector(".jf-error").textContent).toContain(
+      "Enter a number",
+    );
+  });
+
+  it("number: the field keeps the text as typed while in it (1. stays 1. on the way to 1.5)", async () => {
+    const { el, root, changes } = await mount();
+    await typeInto(el, control(root, "ratio"), "1.");
+    expect(changes.at(-1)).toEqual({ ratio: 1 });
+    expect(control(root, "ratio").value).toBe("1.");
+    await typeInto(el, control(root, "ratio"), "1.5");
+    expect(changes.at(-1)).toEqual({ ratio: 1.5 });
+    // Leaving it shows the stored number.
+    await typeInto(el, control(root, "ratio"), "01.50");
+    control(root, "ratio").dispatchEvent(new Event("blur"));
+    await el.updateComplete;
+    expect(control(root, "ratio").value).toBe("1.5");
+  });
+
+  it("Reset clears text that was not a number", async () => {
+    const { el, root } = await mount({ value: { size: 5 } });
+    await typeInto(el, control(root, "size"), "x");
+    fieldOf(root, "size").querySelector('button[aria-label="Reset Size"]').click();
+    await el.updateComplete;
+    expect(control(root, "size").value).toBe("3");
+    expect(fieldOf(root, "size").querySelector(".jf-error")).toBeNull();
   });
 
   it("enum: a menu of its values (the toolkit's dropdown, not the native one)", async () => {
@@ -307,8 +363,18 @@ describe("json-form lists", () => {
       defaults: {},
     });
     const d = await open(el, root, "ports");
-    await typeInto(el, d.querySelector('.jf-new input[aria-label="New item of Ports"]'), "80");
+    const fresh = () => d.querySelector('.jf-new input[aria-label="New item of Ports"]');
+    expect(fresh().type).toBe("text");
+    await typeInto(el, fresh(), "x");
+    expect(changes).toEqual([]);
+    expect(fresh().getAttribute("aria-invalid")).toBe("true");
+    await typeInto(el, fresh(), "80");
     expect(changes.at(-1)).toEqual({ ports: [80] });
+    const item = d.querySelector(".jf-list-item:not(.jf-new) input");
+    expect(item.type).toBe("text");
+    await typeInto(el, item, "8o");
+    expect(changes.at(-1)).toEqual({ ports: [80] });
+    expect(item.getAttribute("aria-invalid")).toBe("true");
   });
 
   it("a list of choices: picking from the empty row's menu adds it", async () => {
