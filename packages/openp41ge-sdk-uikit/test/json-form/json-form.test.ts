@@ -10,6 +10,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import "../../src/json-form/json-form";
 import { JSON_FORM_CHANGE } from "../../src/json-form/json-form";
+import { focusLineLayer } from "../../src/components/tabs/focus-line";
 
 const schema = {
   type: "object",
@@ -452,6 +453,16 @@ describe("json-form drawers", () => {
     expect(css).not.toMatch(/\.jf-drawer\s*\{[^}]*visibility 0s [\d.]/);
   });
 
+  it("the shadow runs past the top and bottom, so its blur does not round the drawers' corners", async () => {
+    const { el } = await mountDeep();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    const rule = css.match(/\.jf-drawer-shadow\s*\{([^}]*)\}/)[1];
+    expect(rule).toMatch(/top: -\d+px/);
+    expect(rule).toMatch(/bottom: -\d+px/);
+    // The layer clips it to the area.
+    expect(css).toMatch(/\.jf-layer\s*\{[^}]*overflow: hidden/);
+  });
+
   it("one shadow and one mask for the whole stack; the drawers cast none", async () => {
     const { el, root } = await mountDeep();
     expect(root.querySelector(".jf-drawer-shadow")).toBeNull();
@@ -530,6 +541,32 @@ describe("json-form drawers", () => {
     ]);
     const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
     expect(css).toMatch(/\.jf-layer--area\s*\{[^}]*position: fixed/);
+  });
+
+  it("while a drawer is open its area is covered: the tab's focus line hides", async () => {
+    const area = document.createElement("div");
+    const tab = document.createElement("div");
+    area.appendChild(tab);
+    document.body.appendChild(area);
+    tab.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 30,
+      right: 100,
+      bottom: 30,
+    });
+    window.dispatchEvent(new Event("focus"));
+    const owner = {};
+    focusLineLayer().show(tab, owner);
+    expect(focusLineLayer().element.style.display).toBe("block");
+    const { el, root } = await mount({ schema: deep, defaults: {}, drawerArea: area });
+    await open(el, root, "a");
+    expect(focusLineLayer().element.style.display).toBe("none");
+    root.querySelector(".jf-mask").click();
+    await el.updateComplete;
+    expect(focusLineLayer().element.style.display).toBe("block");
+    focusLineLayer().hide(owner);
   });
 
   it("drawersOpen: whether a drawer is open (the host holds its own shortcuts meanwhile)", async () => {

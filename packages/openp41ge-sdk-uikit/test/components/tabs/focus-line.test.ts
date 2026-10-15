@@ -7,7 +7,8 @@
  * tab as anything around it scrolls, and is clipped to the visible part of
  * the tab bar (hidden when the tab is scrolled out of it). The tab bar that
  * shows it is its owner; another owner's hide does not remove it. It is
- * never shown while its window is not focused (each window has its own).
+ * never shown while its window is not focused (each window has its own), nor
+ * while something covers its tab (a drawer over the tab's cell).
  */
 import { describe, test, expect, afterEach, beforeEach } from "vitest";
 import { focusLineLayer } from "../../../src/components/tabs/focus-line";
@@ -123,5 +124,46 @@ describe("focus line", () => {
     expect(focusLineLayer().target).toBe(tab);
     window.dispatchEvent(new Event("focus"));
     expect(style().display).not.toBe("none");
+  });
+
+  test("hidden while something covers its tab; back when it is uncovered", () => {
+    const { bar, tab } = setup();
+    const cell = document.createElement("div");
+    document.body.appendChild(cell);
+    cell.appendChild(bar);
+    const drawer = {};
+    focusLineLayer().show(tab, owner);
+    expect(style().display).toBe("block");
+    focusLineLayer().cover(drawer, cell);
+    expect(style().display).toBe("none");
+    focusLineLayer().uncover(drawer);
+    expect(style().display).toBe("block");
+  });
+
+  test("covering another area leaves the line alone", () => {
+    const { tab } = setup();
+    const elsewhere = document.createElement("div");
+    document.body.appendChild(elsewhere);
+    const drawer = {};
+    focusLineLayer().show(tab, owner);
+    focusLineLayer().cover(drawer, elsewhere);
+    expect(style().display).toBe("block");
+    focusLineLayer().uncover(drawer);
+  });
+
+  test("a cover counts across shadow roots (the tab inside a tab bar's shadow)", () => {
+    const cell = document.createElement("div");
+    const host = document.createElement("div");
+    cell.appendChild(host);
+    document.body.appendChild(cell);
+    const root = host.attachShadow({ mode: "open" });
+    const tab = document.createElement("div");
+    root.appendChild(tab);
+    tab.getBoundingClientRect = () => rect(100, 40, 120, 34);
+    const drawer = {};
+    focusLineLayer().show(tab, owner);
+    focusLineLayer().cover(drawer, cell);
+    expect(style().display).toBe("none");
+    focusLineLayer().uncover(drawer);
   });
 });
