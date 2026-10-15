@@ -260,19 +260,73 @@ describe("json-form fields", () => {
 });
 
 describe("json-form lists", () => {
-  it("a list of values: a card; its drawer edits, adds and removes items", async () => {
+  it("a list of values: a card; its drawer edits and removes items", async () => {
     const { el, root, changes } = await mount({ value: { tags: ["a", "b"] } });
     const d = await open(el, root, "tags");
-    const items = () => d.querySelectorAll(".jf-list-item input");
+    const items = () => d.querySelectorAll(".jf-list-item:not(.jf-new) input");
     expect([...items()].map((i) => i.value)).toEqual(["a", "b"]);
     await typeInto(el, items()[1], "c");
     expect(changes.at(-1)).toEqual({ tags: ["a", "c"] });
-    d.querySelector('button[aria-label="Add to Tags"]').click();
-    await el.updateComplete;
-    expect(changes.at(-1)).toEqual({ tags: ["a", "c", ""] });
     d.querySelector('button[aria-label="Remove item 1 of Tags"]').click();
     await el.updateComplete;
-    expect(changes.at(-1)).toEqual({ tags: ["c", ""] });
+    expect(changes.at(-1)).toEqual({ tags: ["c"] });
+  });
+
+  it("no Add buttons: an empty row is always last", async () => {
+    const { el, root } = await mount({ value: { tags: ["a"], hosts: [{ url: "x" }] } });
+    for (const key of ["tags", "hosts"]) {
+      const d = await open(el, root, key);
+      expect(d.querySelector(".jf-add")).toBeNull();
+      expect(d.querySelector('[aria-label^="Add to"]')).toBeNull();
+      expect(d.querySelectorAll(".jf-new").length).toBe(1);
+      root.querySelector(".jf-mask").click();
+      await el.updateComplete;
+    }
+  });
+
+  it("typing in the empty row adds an item, keeps typing in it, and a new empty row follows", async () => {
+    const { el, root, changes } = await mount({ value: { tags: ["a"] } });
+    const d = await open(el, root, "tags");
+    const fresh = () => d.querySelector('.jf-new input[aria-label="New item of Tags"]');
+    expect(fresh().value).toBe("");
+    fresh().focus();
+    await typeInto(el, fresh(), "b");
+    expect(changes.at(-1)).toEqual({ tags: ["a", "b"] });
+    const items = [...d.querySelectorAll(".jf-list-item:not(.jf-new) input")];
+    expect(items.map((i) => i.value)).toEqual(["a", "b"]);
+    expect(root.activeElement).toBe(items[1]);
+    expect(fresh().value).toBe("");
+  });
+
+  it("a list of numbers: typing a number in the empty row adds it", async () => {
+    const { el, root, changes } = await mount({
+      schema: {
+        type: "object",
+        properties: { ports: { type: "array", title: "Ports", items: { type: "integer" } } },
+      },
+      defaults: {},
+    });
+    const d = await open(el, root, "ports");
+    await typeInto(el, d.querySelector('.jf-new input[aria-label="New item of Ports"]'), "80");
+    expect(changes.at(-1)).toEqual({ ports: [80] });
+  });
+
+  it("a list of choices: picking from the empty row's menu adds it", async () => {
+    const { el, root, changes } = await mount({
+      schema: {
+        type: "object",
+        properties: {
+          levels: { type: "array", title: "Levels", items: { enum: ["low", "high"] } },
+        },
+      },
+      defaults: {},
+    });
+    const d = await open(el, root, "levels");
+    d.querySelector(".jf-new openp41ge-select").dispatchEvent(
+      new CustomEvent("change", { detail: { value: "1" } }),
+    );
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ levels: ["high"] });
   });
 
   it("a list of objects: its drawer has a card per item, titled by its first text", async () => {
@@ -280,7 +334,7 @@ describe("json-form lists", () => {
       value: { hosts: [{ url: "a.example" }, { url: "b.example" }] },
     });
     const d = await open(el, root, "hosts");
-    const cards = [...d.querySelectorAll(".jf-sub")];
+    const cards = [...d.querySelectorAll(".jf-sub:not(.jf-new)")];
     expect(cards.map((c) => c.querySelector(".jf-sub-title").textContent.trim())).toEqual([
       "a.example",
       "b.example",
@@ -295,7 +349,7 @@ describe("json-form lists", () => {
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "a.example", port: 8080 }] });
   });
 
-  it("add, remove and reorder items; an added item opens", async () => {
+  it("remove and reorder items", async () => {
     const { el, root, changes } = await mount({
       value: { hosts: [{ url: "a" }, { url: "b" }] },
     });
@@ -306,10 +360,30 @@ describe("json-form lists", () => {
     d.querySelector('button[aria-label="Remove item 1 of Hosts"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }] });
-    d.querySelector('button[aria-label="Add to Hosts"]').click();
+  });
+
+  it("the empty card opens a drawer for a new item; what is entered there adds it", async () => {
+    const { el, root, changes } = await mount({ value: { hosts: [{ url: "a" }] } });
+    const d = await open(el, root, "hosts");
+    d.querySelector('.jf-new[aria-label="New item of Hosts"]').click();
     await el.updateComplete;
-    expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }, {}] });
     expect(drawer(root, "hosts[1]")).not.toBeNull();
+    await typeInto(el, control(root, "hosts[1].url"), "b");
+    expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }, { url: "b" }] });
+    // A new empty card follows.
+    expect(drawer(root, "hosts").querySelectorAll(".jf-new").length).toBe(1);
+  });
+
+  it("a new item left empty is gone when its drawer closes", async () => {
+    const { el, root, changes } = await mount({ value: { hosts: [{ url: "a" }] } });
+    const d = await open(el, root, "hosts");
+    d.querySelector('.jf-new[aria-label="New item of Hosts"]').click();
+    await el.updateComplete;
+    drawer(root, "hosts[1]").querySelector(".jf-drawer-close").click();
+    await el.updateComplete;
+    await el.updateComplete;
+    expect(changes.at(-1) ?? { hosts: [{ url: "a" }] }).toEqual({ hosts: [{ url: "a" }] });
+    expect(drawer(root, "hosts").querySelectorAll(".jf-sub:not(.jf-new)").length).toBe(1);
   });
 });
 
@@ -688,19 +762,46 @@ describe("json-form maps", () => {
     expect(changes.at(-1)).toEqual({ hosts: { a: { url: "x.example" } } });
   });
 
-  it("adds an entry under a new key; an empty or taken key cannot be added", async () => {
+  it("the empty row takes a new key: Enter (or leaving it) adds the entry and opens it", async () => {
     const { el, root, changes } = await mountMap();
     await open(el, root, "hosts");
-    const key = drawer(root, "hosts").querySelector('input[aria-label="New key for Hosts"]');
-    const add = btn(root, "Add to Hosts");
-    expect(add.disabled).toBe(true);
-    await typeInto(el, key, "a");
-    expect(add.disabled).toBe(true);
-    await typeInto(el, key, "c");
-    add.click();
+    expect(drawer(root, "hosts").querySelector(".jf-add")).toBeNull();
+    const key = () =>
+      drawer(root, "hosts").querySelector('.jf-new input[aria-label="New key for Hosts"]');
+    await typeInto(el, key(), "c");
+    // Typing alone does not add it (each key typed would be a new entry).
+    expect(changes.at(-1)).not.toEqual({ hosts: { c: {} } });
+    key().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: { c: {} } });
     expect(drawer(root, "hosts.c")).not.toBeNull();
+    expect(key().value).toBe("");
+  });
+
+  it("a key that is taken is not added and is marked", async () => {
+    const { el, root, changes } = await mountMap();
+    await open(el, root, "hosts");
+    const key = drawer(root, "hosts").querySelector(
+      '.jf-new input[aria-label="New key for Hosts"]',
+    );
+    await typeInto(el, key, "a");
+    key.dispatchEvent(new Event("change", { bubbles: true }));
+    await el.updateComplete;
+    expect(changes).toEqual([]);
+    expect(key.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("a map of values: a new key adds a row for its value", async () => {
+    const { el, root, changes } = await mountMap({ levels: { Low: "low" } });
+    await open(el, root, "levels");
+    const key = drawer(root, "levels").querySelector(
+      '.jf-new input[aria-label="New key for Levels"]',
+    );
+    await typeInto(el, key, "High");
+    key.dispatchEvent(new Event("change", { bubbles: true }));
+    await el.updateComplete;
+    expect(Object.keys(changes.at(-1).levels)).toEqual(["Low", "High"]);
+    expect(fieldOf(root, "levels.High")).not.toBeNull();
   });
 
   it("renames and removes the user's entries; the default follows a rename", async () => {
