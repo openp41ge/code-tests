@@ -1,7 +1,8 @@
 // @ts-nocheck
 /**
  * <json-form> renders a config schema as a form: a labelled field per
- * property; an unset field shows its default, faded; Reset removes the
+ * property; an unset field shows its default, faded; a setting with a
+ * default always has a Reset icon (greyed out while unset), which removes the
  * user's value. Each edit emits `json-form-change` with the full user values
  * (the host validates and saves). Lists edit item by item; lists of objects
  * are cards (accordion segments) with add, remove and reorder.
@@ -105,9 +106,43 @@ describe("json-form fields", () => {
     expect(control(root, "size").value).toBe("5");
     expect(fieldOf(root, "size").classList.contains("jf-default")).toBe(false);
     const reset = fieldOf(root, "size").querySelector('button[aria-label="Reset Size"]');
+    expect(reset.disabled).toBe(false);
     reset.click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ name: "x" });
+  });
+
+  it("every setting with a default has a Reset icon right of its control, greyed out while unset", async () => {
+    const { root } = await mount();
+    for (const [key, label] of [
+      ["enabled", "Enabled"],
+      ["size", "Size"],
+      ["mode", "Mode"],
+    ]) {
+      const reset = fieldOf(root, key).querySelector(`button[aria-label="Reset ${label}"]`);
+      expect(reset.disabled).toBe(true);
+      expect(reset.classList.contains("jf-icon-btn")).toBe(true);
+      expect(reset.querySelector("svg")).not.toBeNull();
+      // On the control's row, after it.
+      const row = reset.parentElement;
+      expect(row.classList.contains("jf-row")).toBe(true);
+      expect(row.firstElementChild).toBe(control(root, key));
+    }
+  });
+
+  it("a setting with no default has Reset only once it is set", async () => {
+    const { el, root } = await mount();
+    expect(fieldOf(root, "name").querySelector('button[aria-label="Reset Name"]')).toBeNull();
+    el.value = { name: "x" };
+    await el.updateComplete;
+    expect(fieldOf(root, "name").querySelector('button[aria-label="Reset Name"]').disabled).toBe(
+      false,
+    );
+  });
+
+  it("read only: no Reset", async () => {
+    const { root } = await mount({ readonly: true, value: { size: 5 } });
+    expect(root.querySelector('button[aria-label^="Reset"]')).toBeNull();
   });
 
   it("boolean: a toggle", async () => {
@@ -178,7 +213,7 @@ describe("json-form fields", () => {
     const { root } = await mount({ readonly: true, value: { size: 5, tags: ["a"] } });
     for (const input of root.querySelectorAll("input, select")) expect(input.disabled).toBe(true);
     expect(control(root, "enabled").disabled).toBe(true);
-    expect(root.querySelector('button:not([disabled])')).toBeNull();
+    expect(root.querySelector("button:not([disabled])")).toBeNull();
   });
 
   it("emits a bubbling, composed json-form-change", async () => {
@@ -207,7 +242,9 @@ describe("json-form lists", () => {
   });
 
   it("a list of objects: a card of segments, one per item, titled by its first text", async () => {
-    const { root } = await mount({ value: { hosts: [{ url: "a.example" }, { url: "b.example" }] } });
+    const { root } = await mount({
+      value: { hosts: [{ url: "a.example" }, { url: "b.example" }] },
+    });
     const segs = fieldOf(root, "hosts").querySelectorAll(".jf-card > .jf-seg");
     expect([...segs].map((s) => s.querySelector(".jf-seg-title").textContent.trim())).toEqual([
       "a.example",
@@ -263,6 +300,18 @@ describe("json-form maps", () => {
   };
   const mapDefaults = { defaultHost: "a", hosts: { a: { url: "a.example" } } };
   const mountMap = (value = {}) => mount({ schema: mapSchema, defaults: mapDefaults, value });
+
+  it("a map with a default has Reset in its head, greyed out until the user changes it", async () => {
+    const { el, root, changes } = await mountMap();
+    const reset = () => fieldOf(root, "hosts").querySelector('button[aria-label="Reset Hosts"]');
+    expect(reset().disabled).toBe(true);
+    expect(reset().parentElement.classList.contains("jf-head")).toBe(true);
+    el.value = { hosts: { b: { url: "b.example" } } };
+    await el.updateComplete;
+    reset().click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({});
+  });
   const segs = (root) => [...fieldOf(root, "hosts").querySelectorAll(".jf-card > .jf-seg")];
   const btn = (root, label) => root.querySelector(`button[aria-label="${label}"]`);
 
