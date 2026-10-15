@@ -482,11 +482,17 @@ describe("json-form drawers", () => {
     expect(css).toMatch(/\.jf-drawer-shadow\s*\{[^}]*box-shadow/);
   });
 
-  it("the header shows the trail; close returns to the parent", async () => {
+  it("the header shows the drawer's name only; close returns to the parent", async () => {
     const { el, root } = await mountDeep();
     await open(el, root, "a");
     await open(el, root, "a.b");
-    expect(drawer(root, "a.b").querySelector(".jf-drawer-trail").textContent).toContain("A");
+    expect(drawer(root, "a.b").querySelector(".jf-drawer-trail")).toBeNull();
+    expect(
+      drawer(root, "a.b")
+        .querySelector(".jf-drawer-heading")
+        .textContent.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("B");
     drawer(root, "a.b").querySelector('button[aria-label="Close B"]').click();
     await el.updateComplete;
     expect(state(root)).toEqual([["a", "front"]]);
@@ -597,12 +603,12 @@ describe("json-form drawers", () => {
     expect(root.activeElement).toBe(last);
   });
 
-  it("the head is one line as tall as the tab bar it covers: the trail, then the title", async () => {
+  it("the head is one line as tall as the tab bar it covers: the drawer's name", async () => {
     const { el, root } = await mountDeep();
     await open(el, root, "a");
     await open(el, root, "a.b");
     const heading = drawer(root, "a.b").querySelector(".jf-drawer-heading");
-    expect(heading.textContent.replace(/\s+/g, " ").trim()).toBe("A › B");
+    expect(heading.textContent.replace(/\s+/g, " ").trim()).toBe("B");
     const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
     expect(css).toMatch(/\.jf-drawer-head\s*\{[^}]*height: 35px/);
   });
