@@ -981,3 +981,59 @@ describe("json-form drawer views", () => {
     );
   });
 });
+
+describe("json-form grouped settings", () => {
+  const editor = (title) => ({
+    type: "object",
+    title,
+    properties: { fontSize: { type: "integer" } },
+  });
+  const schema = {
+    type: "object",
+    properties: {
+      theme: { type: "string" },
+      "editor/*": editor("editor/*"),
+      "editor/file": editor("editor/file"),
+      "editor/json": editor("editor/json"),
+      dragConsumers: { type: "object", additionalProperties: { type: "string" } },
+    },
+  };
+  const mountGroups = () => mount({ schema, defaults: {} });
+
+  it("settings sharing a prefix (editor/…) are one card: a row each, no gaps", async () => {
+    const { root } = await mountGroups();
+    const groups = [...root.querySelectorAll(".jf-sub-group")];
+    expect(groups.length).toBe(1);
+    expect([...groups[0].children].map((c) => c.dataset.key)).toEqual([
+      "editor/*",
+      "editor/file",
+      "editor/json",
+    ]);
+    // The next setting, not editor/…, is a card of its own.
+    expect(card(root, "dragConsumers").parentElement.classList.contains("jf-sub-group")).toBe(
+      false,
+    );
+  });
+
+  it("each row of a grouped card still opens its own drawer", async () => {
+    const { el, root } = await mountGroups();
+    const d = await open(el, root, "editor/file");
+    expect(d.querySelector(".jf-drawer-title").textContent).toContain("editor/file");
+  });
+
+  it("the group has the rounded corners; its rows are square, divided by a line", async () => {
+    const { el } = await mountGroups();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-sub-group\s*\{[^}]*border-radius: 6px[^}]*overflow: hidden/s);
+    expect(css).toMatch(/\.jf-sub-group > \.jf-sub\s*\{[^}]*border-radius: 0/);
+    expect(css).toMatch(/\.jf-sub-group > \.jf-sub \+ \.jf-sub\s*\{[^}]*border-top: 1px solid/);
+  });
+
+  it("a lone setting with a prefix is a plain card", async () => {
+    const { root } = await mount({
+      schema: { type: "object", properties: { "editor/*": editor("editor/*") } },
+      defaults: {},
+    });
+    expect(root.querySelector(".jf-sub-group")).toBeNull();
+  });
+});
