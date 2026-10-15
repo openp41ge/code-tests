@@ -135,6 +135,33 @@ describe("openp41ge-config-editor form view", () => {
     expect(button(el, "Sort keys")).not.toBeNull();
   });
 
+  test("the form's drawers cover the tab's cell (tab bar included)", async () => {
+    const cell = document.createElement("div");
+    cell.className = "grid-cell";
+    document.body.appendChild(cell);
+    const el = document.createElement("openp41ge-config-editor") as Openp41geConfigEditor;
+    el.bridge = fakeBridge();
+    el.extensionId = "demo";
+    cell.appendChild(el);
+    await tick();
+    expect((form(el) as Form & { drawerArea: unknown }).drawerArea).toBe(cell);
+  });
+
+  test("while a drawer is open, Ctrl/Cmd+S does not save (the drawer blocks the cell)", async () => {
+    const bridge = fakeBridge();
+    const el = await mount(bridge);
+    form(el)!.dispatchEvent(
+      new CustomEvent("json-form-change", { detail: { value: { model: "mistral" } } }),
+    );
+    await tick();
+    Object.defineProperty(form(el)!, "drawersOpen", { value: true, configurable: true });
+    form(el)!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+    );
+    await tick();
+    expect(bridge.set).not.toHaveBeenCalled();
+  });
+
   test("the errors are the merged values' (as Save checks them): x-keysOf sees the default map", async () => {
     const schema: ConfigSchema = {
       type: "object",

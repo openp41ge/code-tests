@@ -469,6 +469,65 @@ describe("json-form drawers", () => {
     expect(state(root)).toEqual([]);
   });
 
+  it("drawerArea: the drawers cover that element's box (a whole cell, tab bar included)", async () => {
+    const area = document.createElement("div");
+    area.getBoundingClientRect = () => ({
+      left: 10,
+      top: 20,
+      right: 510,
+      bottom: 420,
+      width: 500,
+      height: 400,
+    });
+    document.body.appendChild(area);
+    const { el, root } = await mount({ schema: deep, defaults: {}, drawerArea: area });
+    await open(el, root, "a");
+    const layer = root.querySelector(".jf-layer");
+    expect(layer.classList.contains("jf-layer--area")).toBe(true);
+    expect([layer.style.left, layer.style.top, layer.style.width, layer.style.height]).toEqual([
+      "10px",
+      "20px",
+      "500px",
+      "400px",
+    ]);
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-layer--area\s*\{[^}]*position: fixed/);
+  });
+
+  it("drawersOpen: whether a drawer is open (the host holds its own shortcuts meanwhile)", async () => {
+    const { el, root } = await mountDeep();
+    expect(el.drawersOpen).toBe(false);
+    await open(el, root, "a");
+    expect(el.drawersOpen).toBe(true);
+    root.querySelector(".jf-mask").click();
+    await el.updateComplete;
+    expect(el.drawersOpen).toBe(false);
+  });
+
+  it("Tab stays in the front drawer: past its last control to its first, and back", async () => {
+    const { el, root } = await mountDeep();
+    const d = await open(el, root, "a");
+    const close = d.querySelector(".jf-drawer-close");
+    const last = card(root, "a.b");
+    last.focus();
+    last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, composed: true }));
+    expect(root.activeElement).toBe(close);
+    close.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, composed: true }),
+    );
+    expect(root.activeElement).toBe(last);
+  });
+
+  it("the head is one line as tall as the tab bar it covers: the trail, then the title", async () => {
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    await open(el, root, "a.b");
+    const heading = drawer(root, "a.b").querySelector(".jf-drawer-heading");
+    expect(heading.textContent.replace(/\s+/g, " ").trim()).toBe("A › B");
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-drawer-head\s*\{[^}]*height: 35px/);
+  });
+
   it("the form scrolls itself, so the drawers cover what is in view", async () => {
     const { el, root } = await mountDeep();
     expect(root.querySelector(".jf-scroll")).not.toBeNull();
