@@ -305,6 +305,33 @@ describe("json-form fields", () => {
     ).toBeNull();
   });
 
+  it("readOnly setting: its control is greyed out, and Reset removes it", async () => {
+    const { el, root, changes } = await mount({
+      schema: {
+        type: "object",
+        properties: {
+          old: { enum: ["x"], title: "Old", readOnly: true },
+          flag: { type: "boolean", title: "Flag", readOnly: true },
+          note: { type: "string", title: "Note", readOnly: true },
+          count: { type: "integer", title: "Count", readOnly: true },
+          mode: { enum: ["fast", "safe"], title: "Mode" },
+        },
+      },
+      value: { old: "x", flag: true, note: "n", count: 2 },
+      defaults: {},
+    });
+    for (const key of ["old", "flag", "note", "count"]) {
+      expect(control(root, key).disabled).toBe(true);
+      expect(fieldOf(root, key).classList.contains("jf-readonly")).toBe(true);
+    }
+    expect(control(root, "mode").disabled).toBe(false);
+    const reset = fieldOf(root, "old").querySelector('button[aria-label="Reset Old"]');
+    expect(reset.disabled).toBe(false);
+    reset.click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ flag: true, note: "n", count: 2 });
+  });
+
   it("emits a bubbling, composed json-form-change", async () => {
     const { el, root } = await mount();
     let event;

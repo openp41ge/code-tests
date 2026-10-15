@@ -126,6 +126,45 @@ describe("DragConsumerRegistry", () => {
   });
 });
 
+describe("DragConsumerRegistry — choices", () => {
+  it("lists each kind with the consumers that can open it in the grid, first registered first", () => {
+    const r = registry();
+    r.registerPlatform([fileViewer]);
+    r.registerExtension("my-ext", [
+      extViewer,
+      // Opens only in a sidebar: no choice for a grid drop.
+      {
+        ...extViewer,
+        id: "side",
+        placement: ["sidebar"],
+        open: { kind: "renderer-surface", surface: "sidebar:side" },
+      },
+      {
+        id: "chat",
+        accepts: ["my-ext/chat"],
+        placement: ["grid"],
+        open: { kind: "renderer-surface", surface: "grid:chat" },
+      },
+    ]);
+    expect([...r.choices()]).toEqual([
+      ["openp41ge/file-path", ["file-viewer", "my-ext/viewer"]],
+      ["my-ext/chat", ["my-ext/chat"]],
+    ]);
+  });
+
+  it("tells its listeners when an extension's consumers come or go", () => {
+    const r = registry();
+    const seen = vi.fn();
+    const off = r.onChange(seen);
+    r.registerExtension("my-ext", [extViewer]);
+    r.unregister("my-ext");
+    expect(seen).toHaveBeenCalledTimes(2);
+    off();
+    r.registerExtension("my-ext", [extViewer]);
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("PLATFORM_DRAG_CONSUMERS", () => {
   function open(payload: Parameters<DragConsumerRegistry["resolve"]>[0]) {
     const r = registry();

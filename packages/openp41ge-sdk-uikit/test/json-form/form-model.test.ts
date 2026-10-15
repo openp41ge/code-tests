@@ -14,6 +14,24 @@ import {
 
 const byName = (fields: FormField[], name: string) => fields.find((f) => f.name === name)!;
 
+describe("formFields: readOnly", () => {
+  it("marks a readOnly property, which may still be set", () => {
+    const f = formFields(
+      {
+        type: "object",
+        properties: {
+          old: { type: "string", enum: ["x"], readOnly: true },
+          on: { type: "boolean" },
+        },
+      },
+      { old: "x" },
+      {},
+    );
+    expect(byName(f, "old")).toMatchObject({ readOnly: true, set: true, value: "x" });
+    expect(byName(f, "on").readOnly).toBeUndefined();
+  });
+});
+
 describe("formFields: one field per property, by its schema", () => {
   const schema = {
     type: "object",

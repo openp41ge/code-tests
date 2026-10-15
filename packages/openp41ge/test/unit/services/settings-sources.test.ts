@@ -130,6 +130,102 @@ describe("settingsBridge — the platform's settings", () => {
   });
 });
 
+describe("settingsBridge — dragConsumers offers the registered kinds", () => {
+  /** Registered consumers: kind → ids (first registered first). */
+  function consumers(choices: Record<string, string[]>) {
+    const listeners = new Set<() => void>();
+    let current = new Map(Object.entries(choices));
+    return {
+      source: {
+        choices: () => current,
+        onChange: (fn: () => void) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+      },
+      replace(next: Record<string, string[]>) {
+        current = new Map(Object.entries(next));
+        listeners.forEach((fn) => fn());
+      },
+    };
+  }
+  const registered = {
+    "openp41ge/file-path": ["file-viewer", "my-ext/viewer"],
+    "openp41ge/log-stream": ["log-viewer"],
+  };
+  type DragSchema = {
+    properties: Record<
+      string,
+      { enum: string[]; default?: string; readOnly?: boolean; description?: string }
+    >;
+    additionalProperties: unknown;
+  };
+  const dragSchema = (d: { schema: unknown } | null) =>
+    (d!.schema as { properties: { dragConsumers: DragSchema } }).properties.dragConsumers;
+
+  it("has a setting per registered kind: a menu of its consumers, the first registered by default", async () => {
+    const c = consumers(registered);
+    const d = await settingsBridge(extension(), platform().bridge, c.source).describe(
+      PLATFORM_SETTINGS_ID,
+    );
+    const s = dragSchema(d);
+    expect(Object.keys(s.properties)).toEqual(["openp41ge/file-path", "openp41ge/log-stream"]);
+    expect(s.properties["openp41ge/file-path"]).toMatchObject({
+      type: "string",
+      enum: ["file-viewer", "my-ext/viewer"],
+      default: "file-viewer",
+    });
+    expect(s.additionalProperties).toBe(false);
+    expect(d!.defaults.dragConsumers).toEqual({
+      "openp41ge/file-path": "file-viewer",
+      "openp41ge/log-stream": "log-viewer",
+    });
+  });
+
+  it("shows a choice saved for a kind nothing registers now, read-only and marked", async () => {
+    const c = consumers(registered);
+    const p = platform({ dragConsumers: { "old-ext/thing": "old-ext/viewer" } });
+    const d = await settingsBridge(extension(), p.bridge, c.source).describe(PLATFORM_SETTINGS_ID);
+    const stale = dragSchema(d).properties["old-ext/thing"];
+    expect(stale).toMatchObject({ enum: ["old-ext/viewer"], readOnly: true });
+    expect(stale.default).toBeUndefined();
+    expect(stale.description).toMatch(/^Not registered/);
+    expect(d!.overrides.dragConsumers).toEqual({ "old-ext/thing": "old-ext/viewer" });
+  });
+
+  it("saves only registered consumers of registered kinds (and choices already saved)", async () => {
+    const c = consumers(registered);
+    const p = platform({ dragConsumers: { "old-ext/thing": "old-ext/viewer" } });
+    const bridge = settingsBridge(extension(), p.bridge, c.source);
+    await bridge.describe(PLATFORM_SETTINGS_ID);
+    await bridge.set(PLATFORM_SETTINGS_ID, {
+      dragConsumers: { "openp41ge/file-path": "my-ext/viewer", "old-ext/thing": "old-ext/viewer" },
+    });
+    expect(p.bridge.set).toHaveBeenCalledWith("dragConsumers", {
+      "openp41ge/file-path": "my-ext/viewer",
+      "old-ext/thing": "old-ext/viewer",
+    });
+    p.bridge.set.mockClear();
+    await expect(
+      bridge.set(PLATFORM_SETTINGS_ID, { dragConsumers: { "openp41ge/file-path": "nope" } }),
+    ).rejects.toThrow(/Invalid settings/);
+    await expect(
+      bridge.set(PLATFORM_SETTINGS_ID, { dragConsumers: { "new-ext/kind": "new-ext/viewer" } }),
+    ).rejects.toThrow(/Invalid settings/);
+    expect(p.bridge.set).not.toHaveBeenCalled();
+  });
+
+  it("reports a change of the registered consumers as a change of the platform's settings", () => {
+    const c = consumers(registered);
+    const seen: string[] = [];
+    settingsBridge(extension(), platform().bridge, c.source).onChanged((e) =>
+      seen.push(e.extensionId),
+    );
+    c.replace({ "openp41ge/file-path": ["file-viewer"] });
+    expect(seen).toEqual([PLATFORM_SETTINGS_ID]);
+  });
+});
+
 describe("settingsBridge — extensions", () => {
   it("passes every other id to the extension config bridge", async () => {
     const ext = extension();
