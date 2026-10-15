@@ -130,6 +130,18 @@ describe("json-form fields", () => {
     }
   });
 
+  it("an input's Reset is inside its card; a toggle's sits at the row's right", async () => {
+    const { el, root } = await mount();
+    const rowOf = (key) => control(root, key).parentElement;
+    expect(rowOf("size").classList.contains("jf-input-card")).toBe(true);
+    expect(rowOf("mode").classList.contains("jf-input-card")).toBe(true);
+    expect(rowOf("enabled").classList.contains("jf-input-card")).toBe(false);
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    // The card carries the input's background; the input inside it has none.
+    expect(css).toMatch(/\.jf-input-card\s*\{[^}]*background: var\(--jf-input-bg/);
+    expect(css).toMatch(/\.jf-input-card > \.jf-input[^{]*\{[^}]*background: transparent/);
+  });
+
   it("a setting with no default has Reset only once it is set", async () => {
     const { el, root } = await mount();
     expect(fieldOf(root, "name").querySelector('button[aria-label="Reset Name"]')).toBeNull();
