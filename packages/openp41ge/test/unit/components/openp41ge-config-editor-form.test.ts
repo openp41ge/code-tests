@@ -1,7 +1,7 @@
 /**
  * <openp41ge-config-editor> opens in a Form view of the extension's settings
- * (`<json-form>`), with a switch to the JSON view (as the workspace editor
- * has). Both edit the same staged values; Save stores them. The form shows
+ * (`<json-form>`); one JSON view button toggles the JSON view on and off (as
+ * the workspace editor's does). Both edit the same staged values; Save stores them. The form shows
  * the schema's problems with the values (`configErrors`) under their fields.
  */
 import { describe, test, expect, beforeEach, vi } from "vitest";
@@ -97,22 +97,24 @@ describe("openp41ge-config-editor form view", () => {
     expect((jsonEditor(el) as HTMLElement & { value: unknown }).value).toEqual({
       model: "mistral",
     });
-    button(el, "Form view")!.click();
+    button(el, "JSON view")!.click();
     await tick();
     expect(form(el)!.value).toEqual({ model: "mistral" });
   });
 
-  test("the bottom bar has a Form view and a JSON view button; the open one is pressed", async () => {
+  test("the bottom bar has one JSON view button: off in the form, pressed in the JSON view", async () => {
     const el = await mount(fakeBridge());
-    const pressed = () =>
-      ["Form view", "JSON view"].map((l) => button(el, l)!.getAttribute("aria-pressed"));
-    expect(pressed()).toEqual(["true", "false"]);
-    expect(button(el, "Form view")!.querySelector("svg path")!.getAttribute("d")).toBe(
-      "M240-160 80-320l56-56 64 62v-446h80v446l64-62 56 56-160 160Zm240-40v-80h400v80H480Zm0-240v-80h400v80H480Zm0-240v-80h400v80H480Z",
-    );
-    button(el, "JSON view")!.click();
+    expect(button(el, "Form view")).toBeNull();
+    const json = () => button(el, "JSON view")!;
+    expect(json().getAttribute("aria-pressed")).toBe("false");
+    json().click();
     await tick();
-    expect(pressed()).toEqual(["false", "true"]);
+    expect(json().getAttribute("aria-pressed")).toBe("true");
+    expect(jsonEditor(el)).not.toBeNull();
+    json().click();
+    await tick();
+    expect(json().getAttribute("aria-pressed")).toBe("false");
+    expect(form(el)).not.toBeNull();
   });
 
   test("the last bottom-bar button moves in from the window's rounded corner (the grid's pad)", async () => {

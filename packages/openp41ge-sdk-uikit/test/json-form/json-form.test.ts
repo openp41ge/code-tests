@@ -755,10 +755,10 @@ describe("json-form drawer views", () => {
   const viewButton = (d, label) => d.querySelector(`.jf-drawer-foot button[aria-label="${label}"]`);
   const editorIn = (d) => d.querySelector("json-editor");
 
-  it("every drawer has a bottom bar: Form view (pressed) and JSON view", async () => {
+  it("every drawer has a bottom bar with one JSON view toggle, off: the form shows", async () => {
     const { el, root } = await mountHosts();
     const d = await open(el, root, "hosts");
-    expect(viewButton(d, "Form view").getAttribute("aria-pressed")).toBe("true");
+    expect(d.querySelectorAll(".jf-drawer-foot button").length).toBe(1);
     expect(viewButton(d, "JSON view").getAttribute("aria-pressed")).toBe("false");
     expect(editorIn(d)).toBeNull();
   });
@@ -811,7 +811,7 @@ describe("json-form drawer views", () => {
     expect(changes.at(-1)).toEqual({ hosts: { b: { url: "z" } } });
   });
 
-  it("Form view switches back; each drawer keeps its own view; a reopened drawer is a form", async () => {
+  it("JSON view toggles back off; each drawer keeps its own view; a reopened drawer is a form", async () => {
     const { el, root } = await mountHosts();
     await open(el, root, "hosts");
     await open(el, root, "hosts.a");
@@ -819,7 +819,7 @@ describe("json-form drawer views", () => {
     await el.updateComplete;
     expect(editorIn(drawer(root, "hosts.a"))).not.toBeNull();
     expect(editorIn(drawer(root, "hosts"))).toBeNull();
-    viewButton(drawer(root, "hosts.a"), "Form view").click();
+    viewButton(drawer(root, "hosts.a"), "JSON view").click();
     await el.updateComplete;
     expect(editorIn(drawer(root, "hosts.a"))).toBeNull();
     viewButton(drawer(root, "hosts.a"), "JSON view").click();
