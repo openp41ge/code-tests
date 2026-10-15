@@ -730,7 +730,7 @@ describe("json-form maps", () => {
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({});
   });
-  const segs = (root) => [...drawer(root, "hosts").querySelectorAll(".jf-sub")];
+  const segs = (root) => [...drawer(root, "hosts").querySelectorAll(".jf-sub:not(.jf-new)")];
   const btn = (root, label) => root.querySelector(`button[aria-label="${label}"]`);
 
   it("a map of objects: its drawer has a card per key; the x-keysOf one is Default", async () => {
@@ -776,6 +776,41 @@ describe("json-form maps", () => {
     expect(changes.at(-1)).toEqual({ hosts: { c: {} } });
     expect(drawer(root, "hosts.c")).not.toBeNull();
     expect(key().value).toBe("");
+  });
+
+  it("a map of objects: the empty row is a card like the others: the key, then what a new entry holds, a greyed chevron", async () => {
+    const { el, root, changes } = await mountMap();
+    await open(el, root, "hosts");
+    const row = () => drawer(root, "hosts").querySelector(".jf-sub.jf-new");
+    expect(row().querySelector('input[aria-label="New key for Hosts"]')).not.toBeNull();
+    expect(row().querySelector(".jf-meta").textContent.replace(/\s+/g, " ").trim()).toBe(
+      "1 property · 0 set",
+    );
+    const chev = () => row().querySelector(".jf-chev");
+    expect(chev().getAttribute("aria-disabled")).toBe("true");
+    await typeInto(el, row().querySelector("input"), "c");
+    expect(chev().getAttribute("aria-disabled")).toBe("false");
+    chev().click();
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ hosts: { c: {} } });
+    expect(drawer(root, "hosts.c")).not.toBeNull();
+  });
+
+  it("a map of objects: a taken key says so on the empty card's second row", async () => {
+    const { el, root } = await mountMap();
+    await open(el, root, "hosts");
+    const row = drawer(root, "hosts").querySelector(".jf-sub.jf-new");
+    await typeInto(el, row.querySelector("input"), "a");
+    expect(row.querySelector(".jf-meta-error").textContent).toContain("taken");
+    expect(row.querySelector(".jf-chev").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("the empty card is as tall as a card: the key input sits on the title line", async () => {
+    const { el } = await mountMap();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-new-key\s*\{[^}]*padding: 0/);
+    expect(css).toMatch(/\.jf-new-key\s*\{[^}]*font-size: 13px/);
+    expect(css).toMatch(/\.jf-chev\[aria-disabled="true"\]\s*\{[^}]*opacity/);
   });
 
   it("a key that is taken is not added and is marked", async () => {

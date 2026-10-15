@@ -248,6 +248,8 @@ describe("formFields: maps (an object whose keys are the user's)", () => {
       ["b", "group"],
     ]);
     expect(hosts.defaultKeys).toEqual(["a"]);
+    // A new entry's shape: its value schema's property count.
+    expect(hosts.entryProperties).toBe(2);
     expect(hosts.entries![0].fields!.map((f) => [f.key, f.value, f.set])).toEqual([
       ["hosts.a.url", "a.example", false],
       ["hosts.a.port", 8, true],
