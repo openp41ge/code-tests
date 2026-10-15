@@ -406,6 +406,30 @@ describe("json-form drawers", () => {
     ]);
   });
 
+  it("a card in a drawer opens the next drawer even when the form re-renders mid-click", async () => {
+    // A real click runs microtasks between listeners, so the form re-renders
+    // (the card's drawer now behind) before the click bubbles out of it.
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    const inner = card(root, "a.b");
+    inner.addEventListener("click", () => el.performUpdate());
+    inner.click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([
+      ["a", "back"],
+      ["a.b", "front"],
+    ]);
+  });
+
+  it("a click on the back drawer's strip goes back, without using what it hits", async () => {
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    await open(el, root, "a.b");
+    card(root, "a.b").click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([["a", "front"]]);
+  });
+
   it("the front drawer is 80% wide, the one behind it 90%", async () => {
     const { el } = await mountDeep();
     const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
