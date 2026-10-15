@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { tokenizeJsonText, highlightJsonToHtml, JSON_SCOPE_CLASS } from "../../src/json-editor/json-highlight";
+import {
+  tokenizeJsonText,
+  highlightJsonToHtml,
+  JSON_SCOPE_CLASS,
+} from "../../src/json-editor/json-highlight";
 
 describe("json-highlight", () => {
   it("classifies keys vs string values", () => {

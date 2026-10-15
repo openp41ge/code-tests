@@ -13,7 +13,17 @@ import { describe, test, expect, afterEach, beforeEach } from "vitest";
 import { focusLineLayer } from "../../../src/components/tabs/focus-line";
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
-  return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() {} } as DOMRect;
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON() {},
+  } as DOMRect;
 }
 
 /** A tab in a scrolling bar; rects are set by the test. */

@@ -19,6 +19,7 @@ import { join, relative } from "node:path";
 import { Openp41geIcon } from "../../src/components/openp41ge-icon";
 import { Openp41geInlineIcon } from "../../src/components/openp41ge-inline-icon";
 import { Openp41geToggle } from "../../src/components/openp41ge-toggle";
+import { Openp41geSelect } from "../../src/components/openp41ge-select";
 import { DropLine } from "../../src/components/drop-indicator/drop-line";
 import { APP_DIR } from "@code-tests/support";
 
@@ -41,6 +42,7 @@ describe("custom element registry identity", () => {
     expect(customElements.get("openp41ge-icon")).toBe(Openp41geIcon);
     expect(customElements.get("openp41ge-inline-icon")).toBe(Openp41geInlineIcon);
     expect(customElements.get("openp41ge-toggle")).toBe(Openp41geToggle);
+    expect(customElements.get("openp41ge-select")).toBe(Openp41geSelect);
     expect(customElements.get("drop-line")).toBe(DropLine);
   });
 

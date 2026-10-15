@@ -37,8 +37,8 @@ describe("tab-bar preview icon", () => {
     expect(css).not.toMatch(/skewX\(/);
     // A text-glyph icon (e.g. ⌘) must not take the title's italic either.
     expect(css).toMatch(/\.tab-icon\s*\{[^}]*font-style:\s*normal/);
-    expect(root.querySelector('[data-tab-id="p"] .tab-icon').getAttribute("style") ?? "").not.toMatch(
-      /skew|italic/,
-    );
+    expect(
+      root.querySelector('[data-tab-id="p"] .tab-icon').getAttribute("style") ?? "",
+    ).not.toMatch(/skew|italic/);
   });
 });

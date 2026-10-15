@@ -47,7 +47,8 @@ async function mount(props: Record<string, unknown> = {}) {
 
 /** The field for `key` (its wrapper carries data-key). */
 const fieldOf = (root, key) => root.querySelector(`[data-key="${key}"]`);
-const control = (root, key) => fieldOf(root, key).querySelector("input, select, openp41ge-toggle");
+const control = (root, key) =>
+  fieldOf(root, key).querySelector("input, openp41ge-select, openp41ge-toggle");
 
 async function typeInto(el, input, text) {
   input.value = text;
@@ -176,12 +177,14 @@ describe("json-form fields", () => {
     expect(changes.at(-1)).toEqual({});
   });
 
-  it("enum: a menu of its values", async () => {
+  it("enum: a menu of its values (the toolkit's dropdown, not the native one)", async () => {
     const { el, root, changes } = await mount();
     const select = control(root, "mode");
-    expect([...select.options].map((o) => o.textContent.trim())).toEqual(["fast", "safe"]);
-    select.value = "0";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(select.tagName.toLowerCase()).toBe("openp41ge-select");
+    // Its list is as wide as the card it sits in (with Reset).
+    expect(select.alignTo).toBe(".jf-input-card");
+    expect(select.options.map((o) => o.label)).toEqual(["fast", "safe"]);
+    select.dispatchEvent(new CustomEvent("change", { detail: { value: "0" } }));
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ mode: "fast" });
   });
@@ -223,7 +226,8 @@ describe("json-form fields", () => {
 
   it("readonly: nothing can be edited", async () => {
     const { root } = await mount({ readonly: true, value: { size: 5, tags: ["a"] } });
-    for (const input of root.querySelectorAll("input, select")) expect(input.disabled).toBe(true);
+    for (const input of root.querySelectorAll("input, openp41ge-select"))
+      expect(input.disabled).toBe(true);
     expect(control(root, "enabled").disabled).toBe(true);
     expect(root.querySelector("button:not([disabled])")).toBeNull();
   });
@@ -340,7 +344,7 @@ describe("json-form maps", () => {
   it("x-keysOf: the setting is a menu of the map's keys; Make default sets it", async () => {
     const { el, root, changes } = await mountMap({ hosts: { b: {} } });
     const select = control(root, "defaultHost");
-    expect([...select.options].map((o) => o.textContent.trim())).toEqual(["a", "b"]);
+    expect(select.options.map((o) => o.label)).toEqual(["a", "b"]);
     btn(root, "Make b the default host").click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: { b: {} }, defaultHost: "b" });

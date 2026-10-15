@@ -236,7 +236,11 @@ describe("formFields: maps (an object whose keys are the user's)", () => {
   const defaults = { defaultHost: "a", hosts: { a: { url: "a.example" } } };
 
   it("one entry per key, the defaults' and the user's merged; edits by the value's schema", () => {
-    const fields = formFields(schema, { hosts: { a: { port: 8 }, b: { url: "b.example" } } }, defaults);
+    const fields = formFields(
+      schema,
+      { hosts: { a: { port: 8 }, b: { url: "b.example" } } },
+      defaults,
+    );
     const hosts = byName(fields, "hosts");
     expect(hosts.kind).toBe("map");
     expect(hosts.entries!.map((e) => [e.name, e.kind])).toEqual([

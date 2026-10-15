@@ -3,7 +3,11 @@
  * detection and code-block highlighting.
  */
 import { describe, it, expect } from "vitest";
-import { renderMarkdown, isMarkdownFileRef, highlightCodeBlock } from "../../src/json-editor/md-render";
+import {
+  renderMarkdown,
+  isMarkdownFileRef,
+  highlightCodeBlock,
+} from "../../src/json-editor/md-render";
 
 describe("renderMarkdown", () => {
   it("wraps a plain paragraph", () => {
