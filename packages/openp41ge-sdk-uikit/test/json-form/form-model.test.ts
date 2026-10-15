@@ -14,6 +14,25 @@ import {
 
 const byName = (fields: FormField[], name: string) => fields.find((f) => f.name === name)!;
 
+describe("formFields: option labels and groups", () => {
+  it("carries an enum's x-enumLabels and a property's x-group", () => {
+    const f = formFields(
+      {
+        type: "object",
+        properties: {
+          pick: { enum: ["a", "b"], "x-enumLabels": ["Alpha", "Beta"], "x-group": "Letters" },
+          plain: { enum: ["a"] },
+        },
+      },
+      {},
+      {},
+    );
+    expect(byName(f, "pick")).toMatchObject({ optionLabels: ["Alpha", "Beta"], group: "Letters" });
+    expect(byName(f, "plain").optionLabels).toBeUndefined();
+    expect(byName(f, "plain").group).toBeUndefined();
+  });
+});
+
 describe("formFields: readOnly", () => {
   it("marks a readOnly property, which may still be set", () => {
     const f = formFields(

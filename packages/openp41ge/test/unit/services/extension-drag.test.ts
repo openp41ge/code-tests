@@ -42,6 +42,51 @@ const filePayload: PayloadDragData = {
   contexts: ["workspace"],
 };
 
+describe("createExtensionDragRuntime — consumer choices", () => {
+  it("lists each kind with its label and its consumers with theirs", () => {
+    const rt = createExtensionDragRuntime({ log: makeLog() });
+    rt.registerExtension(
+      "ext-a",
+      {
+        ...decls,
+        kinds: [
+          { name: "ext-a/ticket", label: "Ticket", schema: { type: "object", properties: {} } },
+        ],
+        consumers: [
+          {
+            id: "tickets",
+            label: "Tickets",
+            accepts: ["ext-a/ticket"],
+            placement: ["grid"],
+            open: { kind: "renderer-surface", surface: "grid:viewer" },
+          },
+        ],
+        dropTargets: [],
+      },
+      ["grid:viewer"],
+    );
+    const choices = rt.consumerChoices.choices();
+    expect(choices.find((c) => c.kind === "openp41ge/file-path")).toEqual({
+      kind: "openp41ge/file-path",
+      label: "File",
+      consumers: [{ id: "file-viewer", label: "File viewer" }],
+    });
+    expect(choices.find((c) => c.kind === "ext-a/ticket")).toEqual({
+      kind: "ext-a/ticket",
+      label: "Ticket",
+      consumers: [{ id: "ext-a/tickets", label: "Tickets" }],
+    });
+  });
+
+  it("tells its listeners when an extension registers", () => {
+    const rt = createExtensionDragRuntime({ log: makeLog() });
+    const seen = vi.fn();
+    rt.consumerChoices.onChange(seen);
+    rt.registerExtension("ext-a", decls, ["grid:viewer"]);
+    expect(seen).toHaveBeenCalled();
+  });
+});
+
 describe("createExtensionDragRuntime", () => {
   it("registers platform consumers first", () => {
     const rt = createExtensionDragRuntime({ log: makeLog() });

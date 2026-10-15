@@ -131,10 +131,15 @@ describe("settingsBridge — the platform's settings", () => {
 });
 
 describe("settingsBridge — dragConsumers offers the registered kinds", () => {
-  /** Registered consumers: kind → ids (first registered first). */
-  function consumers(choices: Record<string, string[]>) {
+  type Choice = {
+    kind: string;
+    label?: string;
+    consumers: { id: string; label?: string }[];
+  };
+  /** Registered consumers, per kind (first registered first). */
+  function consumers(choices: Choice[]) {
     const listeners = new Set<() => void>();
-    let current = new Map(Object.entries(choices));
+    let current = choices;
     return {
       source: {
         choices: () => current,
@@ -143,42 +148,77 @@ describe("settingsBridge — dragConsumers offers the registered kinds", () => {
           return () => listeners.delete(fn);
         },
       },
-      replace(next: Record<string, string[]>) {
-        current = new Map(Object.entries(next));
+      replace(next: Choice[]) {
+        current = next;
         listeners.forEach((fn) => fn());
       },
     };
   }
-  const registered = {
-    "openp41ge/file-path": ["file-viewer", "my-ext/viewer"],
-    "openp41ge/log-stream": ["log-viewer"],
+  const registered: Choice[] = [
+    {
+      kind: "my-ext/ticket",
+      label: "Ticket",
+      consumers: [{ id: "my-ext/tickets", label: "Tickets" }],
+    },
+    {
+      kind: "openp41ge/file-path",
+      label: "File",
+      consumers: [
+        { id: "file-viewer", label: "File viewer" },
+        { id: "my-ext/viewer", label: "Viewer" },
+        { id: "other-ext/raw" },
+      ],
+    },
+    { kind: "openp41ge/log-stream", consumers: [{ id: "log-viewer" }] },
+  ];
+  type Prop = {
+    type: string;
+    title?: string;
+    enum: string[];
+    "x-enumLabels"?: string[];
+    "x-group"?: string;
+    default?: string;
+    readOnly?: boolean;
+    description?: string;
   };
-  type DragSchema = {
-    properties: Record<
-      string,
-      { enum: string[]; default?: string; readOnly?: boolean; description?: string }
-    >;
-    additionalProperties: unknown;
-  };
+  type DragSchema = { properties: Record<string, Prop>; additionalProperties: unknown };
   const dragSchema = (d: { schema: unknown } | null) =>
     (d!.schema as { properties: { dragConsumers: DragSchema } }).properties.dragConsumers;
 
-  it("has a setting per registered kind: a menu of its consumers, the first registered by default", async () => {
+  it("has a menu per registered kind, grouped by who declares it (the platform first)", async () => {
     const c = consumers(registered);
     const d = await settingsBridge(extension(), platform().bridge, c.source).describe(
       PLATFORM_SETTINGS_ID,
     );
     const s = dragSchema(d);
-    expect(Object.keys(s.properties)).toEqual(["openp41ge/file-path", "openp41ge/log-stream"]);
-    expect(s.properties["openp41ge/file-path"]).toMatchObject({
+    expect(Object.keys(s.properties)).toEqual([
+      "openp41ge/file-path",
+      "openp41ge/log-stream",
+      "my-ext/ticket",
+    ]);
+    expect(s.properties["openp41ge/file-path"]).toEqual({
       type: "string",
-      enum: ["file-viewer", "my-ext/viewer"],
+      title: "File",
+      "x-group": "Platform",
+      enum: ["file-viewer", "my-ext/viewer", "other-ext/raw"],
+      // Another's consumer names its extension; one without a label, its id.
+      "x-enumLabels": ["File viewer", "Viewer (My Ext)", "other-ext/raw (Other Ext)"],
       default: "file-viewer",
+    });
+    expect(s.properties["openp41ge/log-stream"]).toMatchObject({
+      title: "openp41ge/log-stream",
+      "x-enumLabels": ["log-viewer"],
+    });
+    expect(s.properties["my-ext/ticket"]).toMatchObject({
+      title: "Ticket",
+      "x-group": "My Ext",
+      "x-enumLabels": ["Tickets"],
     });
     expect(s.additionalProperties).toBe(false);
     expect(d!.defaults.dragConsumers).toEqual({
       "openp41ge/file-path": "file-viewer",
       "openp41ge/log-stream": "log-viewer",
+      "my-ext/ticket": "my-ext/tickets",
     });
   });
 
@@ -187,7 +227,12 @@ describe("settingsBridge — dragConsumers offers the registered kinds", () => {
     const p = platform({ dragConsumers: { "old-ext/thing": "old-ext/viewer" } });
     const d = await settingsBridge(extension(), p.bridge, c.source).describe(PLATFORM_SETTINGS_ID);
     const stale = dragSchema(d).properties["old-ext/thing"];
-    expect(stale).toMatchObject({ enum: ["old-ext/viewer"], readOnly: true });
+    expect(stale).toMatchObject({
+      title: "old-ext/thing",
+      "x-group": "Old Ext",
+      enum: ["old-ext/viewer"],
+      readOnly: true,
+    });
     expect(stale.default).toBeUndefined();
     expect(stale.description).toMatch(/^Not registered/);
     expect(d!.overrides.dragConsumers).toEqual({ "old-ext/thing": "old-ext/viewer" });
@@ -221,7 +266,7 @@ describe("settingsBridge — dragConsumers offers the registered kinds", () => {
     settingsBridge(extension(), platform().bridge, c.source).onChanged((e) =>
       seen.push(e.extensionId),
     );
-    c.replace({ "openp41ge/file-path": ["file-viewer"] });
+    c.replace([]);
     expect(seen).toEqual([PLATFORM_SETTINGS_ID]);
   });
 });
@@ -242,5 +287,12 @@ describe("settings titles", () => {
     const { configEditorTitle } = await import("@openp41ge/renderer/apps/config-editor/title");
     expect(configEditorTitle(PLATFORM_SETTINGS_ID)).toBe("Platform Settings");
     expect(configEditorTitle("openp41ge-extension-explorer")).toBe("Explorer Settings");
+  });
+
+  it("names the platform and extensions: Platform, Explorer, My Ext", async () => {
+    const { extensionName } = await import("@openp41ge/renderer/apps/config-editor/title");
+    expect(extensionName(PLATFORM_SETTINGS_ID)).toBe("Platform");
+    expect(extensionName("openp41ge-extension-explorer")).toBe("Explorer");
+    expect(extensionName("my-ext")).toBe("My Ext");
   });
 });

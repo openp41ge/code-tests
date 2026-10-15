@@ -131,7 +131,7 @@ describe("DragConsumerRegistry — choices", () => {
     const r = registry();
     r.registerPlatform([fileViewer]);
     r.registerExtension("my-ext", [
-      extViewer,
+      { ...extViewer, label: "Viewer" },
       // Opens only in a sidebar: no choice for a grid drop.
       {
         ...extViewer,
@@ -147,8 +147,8 @@ describe("DragConsumerRegistry — choices", () => {
       },
     ]);
     expect([...r.choices()]).toEqual([
-      ["openp41ge/file-path", ["file-viewer", "my-ext/viewer"]],
-      ["my-ext/chat", ["my-ext/chat"]],
+      ["openp41ge/file-path", [{ id: "file-viewer" }, { id: "my-ext/viewer", label: "Viewer" }]],
+      ["my-ext/chat", [{ id: "my-ext/chat" }]],
     ]);
   });
 

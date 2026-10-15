@@ -9,6 +9,7 @@ import { beginExtensionScope, endExtensionScope, getScopedDragDecls } from "./sc
 import {
   DRAG_CONTEXTS,
   PLATFORM_DRAG_KINDS,
+  PLATFORM_DRAG_KIND_LABELS,
   validateDragPayload,
   parseDragRegistrations,
   dragConsumerSchema,
@@ -79,6 +80,18 @@ describe("vocabulary", () => {
         "openp41ge/workspace-config",
       ].sort(),
     );
+  });
+});
+
+describe("labels", () => {
+  it("every platform kind has a label", () => {
+    for (const kind of PLATFORM_DRAG_KINDS) expect(PLATFORM_DRAG_KIND_LABELS[kind]).toMatch(/\S/);
+    expect(PLATFORM_DRAG_KIND_LABELS["openp41ge/file-path"]).toBe("File");
+  });
+
+  it("a consumer may have a label (not an empty one)", () => {
+    expect(dragConsumerSchema.safeParse({ ...chatConsumer, label: "Chat" }).success).toBe(true);
+    expect(dragConsumerSchema.safeParse({ ...chatConsumer, label: "" }).success).toBe(false);
   });
 });
 

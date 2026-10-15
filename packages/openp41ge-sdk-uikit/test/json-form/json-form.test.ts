@@ -305,6 +305,38 @@ describe("json-form fields", () => {
     ).toBeNull();
   });
 
+  it("an enum shows its x-enumLabels; settings next to each other in one x-group are under its heading", async () => {
+    const { el, root, changes } = await mount({
+      schema: {
+        type: "object",
+        properties: {
+          a: { enum: ["x", "y"], "x-enumLabels": ["Ex", "Why"], title: "A", "x-group": "First" },
+          b: { enum: ["x"], title: "B", "x-group": "First" },
+          c: { enum: ["x"], title: "C", "x-group": "Second" },
+          d: { enum: ["x"], title: "D" },
+        },
+      },
+      value: { a: "y" },
+      defaults: {},
+    });
+    const select = control(root, "a");
+    expect(select.options.map((o) => o.label)).toEqual(["Ex", "Why"]);
+    const sections = [...root.querySelectorAll(".jf-section")];
+    expect(sections.map((s) => s.querySelector(".jf-section-title").textContent.trim())).toEqual([
+      "First",
+      "Second",
+    ]);
+    expect([...sections[0].querySelectorAll("[data-key]")].map((f) => f.dataset.key)).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(fieldOf(root, "d").closest(".jf-section")).toBeNull();
+    // Choosing by its label stores the value.
+    select.dispatchEvent(new CustomEvent("change", { detail: { value: "0" } }));
+    await el.updateComplete;
+    expect(changes.at(-1)).toEqual({ a: "x" });
+  });
+
   it("readOnly setting: its control is greyed out, and Reset removes it", async () => {
     const { el, root, changes } = await mount({
       schema: {

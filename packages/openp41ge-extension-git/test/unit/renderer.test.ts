@@ -81,12 +81,14 @@ describe("renderer registration", () => {
     expect(drag?.consumers).toEqual([
       {
         id: "repository",
+        label: "Repository",
         accepts: ["openp41ge-extension-git/repository"],
         placement: ["grid"],
         open: { kind: "renderer-surface", surface: "grid:repository" },
       },
       {
         id: "commit",
+        label: "Commit",
         accepts: ["openp41ge-extension-git/commit"],
         placement: ["grid"],
         open: { kind: "renderer-surface", surface: "grid:commit" },

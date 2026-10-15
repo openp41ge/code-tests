@@ -42,6 +42,7 @@ describe("renderer registration", () => {
     expect(drag?.consumers).toEqual([
       {
         id: "workspace-editor",
+        label: "Workspace editor",
         accepts: ["openp41ge/workspace-config"],
         placement: ["grid"],
         open: { kind: "renderer-surface", surface: "grid:workspace-editor" },
