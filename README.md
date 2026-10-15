@@ -1,9 +1,8 @@
-# Openp41ge App: Tests (private)
+# Openp41ge App: Tests
 
-Tests for [openp41ge/code](https://github.com/openp41ge/code). This repo is
-private; the public repo contains no tests, test configs or demos, so it
-can't be used to recreate the application from them. See `AGENTS.md` §5.6 in
-the app.
+Tests for [openp41ge/code](https://github.com/openp41ge/code). They are kept
+in this repo, not the app's: the app repo contains no tests, test configs or
+demos. See `AGENTS.md` §5.6 in the app.
 
 ## Layout
 
@@ -71,7 +70,5 @@ commit with `workflow_dispatch` (sha).
 Both repos use the org's `openp41ge-code-ci` GitHub App, installed on both
 (contents write, for the dispatch to code-tests; commit statuses write, for
 the status on code). Its client id is the `APP_CI_CLIENT_ID` variable and its
-private key the `APP_CI_PRIVATE_KEY` secret. The org is on the Free plan,
-where org-level variables and secrets reach only public repos: code uses the
-org-level ones (shared with code and code-tests), and this private repo has its
-own repo-level copies.
+private key the `APP_CI_PRIVATE_KEY` secret, both set at the org level and
+shared with code and code-tests.
