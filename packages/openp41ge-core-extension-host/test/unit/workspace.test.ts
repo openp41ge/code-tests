@@ -1,7 +1,8 @@
 /**
  * Unit tests for `ctx.workspace`: a handler sees the calling window's
- * workspace (its id, its worktrees, and a data folder scoped to the handler's
- * own extension), or null when the call has no workspace.
+ * workspace (its id, its repositories and worktrees, checking out a worktree,
+ * and a data folder scoped to the handler's own extension), or null when the
+ * call has no workspace.
  */
 import { describe, it, expect, vi } from "vitest";
 import { ExtensionHost } from "@openp41ge-core-extension-host/host";
@@ -34,7 +35,13 @@ async function host() {
         where: async (_payload, ctx) => {
           const ws = ctx?.workspace;
           if (!ws) return { workspace: null };
-          return { id: ws.id, roots: await ws.roots(), dataDir: await ws.dataDir() };
+          return {
+            id: ws.id,
+            roots: await ws.roots(),
+            repositories: await ws.repositories(),
+            added: await ws.addWorktree("github.com/a/b", "dev"),
+            dataDir: await ws.dataDir(),
+          };
         },
       });
       return {};
@@ -48,18 +55,25 @@ async function host() {
 describe("ExtensionHost ctx.workspace", () => {
   it("gives the caller's workspace, with a data folder for the handler's extension", async () => {
     const dataDirFor = vi.fn(async (id: string) => `/data/ws1/extensions/${id}`);
+    const addWorktree = vi.fn(async () => ({ ok: true, path: "/r/dev" }));
+    const root = { repoName: "github.com/a/b", branch: "main", path: "/r/main" };
     const workspace: CallerWorkspace = {
       id: "ws1",
-      roots: async () => [{ repoName: "github.com/a/b", branch: "main", path: "/r/main" }],
+      roots: async () => [root],
+      repositories: async () => [{ repoName: "github.com/a/b", cloned: true, worktrees: [root] }],
+      addWorktree,
       dataDirFor,
     };
     const h = await host();
     expect(await h.dispatch("demo/where", {}, { workspace })).toEqual({
       id: "ws1",
-      roots: [{ repoName: "github.com/a/b", branch: "main", path: "/r/main" }],
+      roots: [root],
+      repositories: [{ repoName: "github.com/a/b", cloned: true, worktrees: [root] }],
+      added: { ok: true, path: "/r/dev" },
       dataDir: "/data/ws1/extensions/demo",
     });
     expect(dataDirFor).toHaveBeenCalledWith("demo");
+    expect(addWorktree).toHaveBeenCalledWith("github.com/a/b", "dev");
   });
 
   it("is null for a call without a workspace", async () => {

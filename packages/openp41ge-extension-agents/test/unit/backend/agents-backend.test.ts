@@ -38,11 +38,15 @@ function providers(): ChatProviderRegistry {
   return registry;
 }
 
-function workspace(id = "ws1"): HandlerWorkspace {
+function workspace(id = "ws1", over: Partial<HandlerWorkspace> = {}): HandlerWorkspace {
+  const root = { repoName: "github.com/a/b", branch: "main", path: "/r/main" };
   return {
     id,
-    roots: async () => [{ repoName: "github.com/a/b", branch: "main", path: "/r/main" }],
+    roots: async () => [root],
+    repositories: async () => [{ repoName: "github.com/a/b", cloned: true, worktrees: [root] }],
+    addWorktree: async () => ({ ok: false, error: "not in this test" }),
     dataDir: async () => path.join(dataDir, id),
+    ...over,
   };
 }
 
@@ -158,7 +162,10 @@ describe("AgentsBackend agent run", () => {
 
   it("pings the active provider", async () => {
     expect(await run("ping-provider")).toEqual({ ok: true });
-    config = { defaultProviderId: "fake", providers: { fake: { baseUrl: "down", defaultModel: "" } } };
+    config = {
+      defaultProviderId: "fake",
+      providers: { fake: { baseUrl: "down", defaultModel: "" } },
+    };
     expect(await run("ping-provider")).toEqual({ ok: false, error: "Provider unreachable" });
     expect(await run("ping-provider", { providerId: "nope" })).toEqual({
       ok: false,
@@ -186,6 +193,49 @@ describe("AgentsBackend agent run", () => {
     );
     await run("send", { id, text: "hi", tools: ["read_file", "edit_file"] });
     expect(send.mock.calls[0][4]).toEqual(["read_file"]);
+  });
+
+  it("shows the agent the workspace's repositories, and checks out worktrees in it", async () => {
+    const systems: string[] = [];
+    let call = 0;
+    const registry = new ChatProviderRegistry();
+    registry.register({
+      id: "fake",
+      label: "Fake",
+      create: () => ({
+        id: "fake",
+        label: "Fake",
+        ping: async () => true,
+        async *streamChat(req) {
+          systems.push(req.messages[0]?.content ?? "");
+          if (call++ === 0) {
+            yield {
+              type: "tool_call" as const,
+              id: "c1",
+              name: "create_worktree",
+              arguments: '{"repo":"github.com/a/bare","branch":"dev"}',
+            };
+          } else {
+            yield { type: "text" as const, text: "done" };
+          }
+        },
+      }),
+    });
+    backend.dispose();
+    backend = new AgentsBackend({ providers: registry });
+    const addWorktree = vi.fn(async () => ({ ok: true, path: "/r/bare/dev" }));
+    const c = ctx({
+      workspace: workspace("ws1", {
+        repositories: async () => [{ repoName: "github.com/a/bare", cloned: true, worktrees: [] }],
+        addWorktree,
+      }),
+    });
+    const { id } = (await run("create", {}, c)) as { id: string };
+    await run("open", { id }, c);
+    await run("send", { id, text: "work on dev" }, c);
+
+    expect(systems[0]).toContain("- github.com/a/bare\n    - no worktree checked out");
+    expect(addWorktree).toHaveBeenCalledWith("github.com/a/bare", "dev");
   });
 
   it("refuses a command that needs a chat id without one", async () => {

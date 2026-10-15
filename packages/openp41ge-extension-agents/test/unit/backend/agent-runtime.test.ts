@@ -377,11 +377,17 @@ describe("AgentRuntime", () => {
     const scopedFor: string[] = [];
     const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
       getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
-      getConnectedWorktrees: async (chatId) => (
+      getConnectedRepositories: async (chatId) => (
         scopedFor.push(chatId),
         [
-          { repo: "github.com/org/repo", branch: "main", path: "/worktrees/main" },
-          { repo: "github.com/org/repo", branch: "feature-x", path: "/worktrees/feature-x" },
+          {
+            repo: "github.com/org/repo",
+            cloned: true,
+            worktrees: [
+              { branch: "main", path: "/worktrees/main" },
+              { branch: "feature-x", path: "/worktrees/feature-x" },
+            ],
+          },
         ]
       ),
     });
@@ -402,8 +408,9 @@ describe("AgentRuntime", () => {
     const chat = ctx.store.create("ws", { providerId: "fake" });
     await scopedRuntime.send(chat.id, "win-a", "go");
 
-    // The scope is the chat's own (its workspace's worktrees).
-    expect(scopedFor).toEqual([chat.id]);
+    // The scope is the chat's own (its workspace's worktrees), read again
+    // for each request to the provider (a tool may check one out).
+    expect(scopedFor).toEqual([chat.id, chat.id]);
     // The tool receives every connected-worktree path as its scope roots.
     expect(capturedCtx).toEqual({
       cwd: undefined,
@@ -426,8 +433,12 @@ describe("AgentRuntime", () => {
 
     const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
       getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
-      getConnectedWorktrees: async () => [
-        { repo: "github.com/org/repo", branch: "main", path: "/worktrees/main" },
+      getConnectedRepositories: async () => [
+        {
+          repo: "github.com/org/repo",
+          cloned: true,
+          worktrees: [{ branch: "main", path: "/worktrees/main" }],
+        },
       ],
     });
 
@@ -456,10 +467,20 @@ describe("AgentRuntime", () => {
 
     const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
       getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
-      getConnectedWorktrees: async () => [
-        { repo: "github.com/org/repo", branch: "main", path: "/worktrees/main" },
-        { repo: "github.com/org/repo", branch: "feature", path: "/worktrees/feature" },
-        { repo: "github.com/org/other", branch: "main", path: "/worktrees/other-main" },
+      getConnectedRepositories: async () => [
+        {
+          repo: "github.com/org/repo",
+          cloned: true,
+          worktrees: [
+            { branch: "main", path: "/worktrees/main" },
+            { branch: "feature", path: "/worktrees/feature" },
+          ],
+        },
+        {
+          repo: "github.com/org/other",
+          cloned: true,
+          worktrees: [{ branch: "main", path: "/worktrees/other-main" }],
+        },
       ],
     });
 
@@ -472,5 +493,112 @@ describe("AgentRuntime", () => {
     expect(systemContent).toContain(
       "- github.com/org/other\n    - branch main: /worktrees/other-main",
     );
+  });
+  it("lists a repository with no worktree, or not cloned yet, in the system prompt", async () => {
+    let systemContent: string | undefined;
+    const provider: ChatProvider = {
+      id: "fake",
+      label: "Fake",
+      ping: async () => true,
+      async *streamChat(req: ChatStreamRequest): AsyncIterable<ProviderDelta> {
+        systemContent = req.messages[0]?.content;
+        yield { type: "text", text: "done" };
+      },
+    };
+    ctx.providers.register({ id: "fake", label: "Fake", create: () => provider });
+
+    const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
+      getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
+      getConnectedRepositories: async () => [
+        { repo: "github.com/org/bare", cloned: true, worktrees: [] },
+        { repo: "github.com/org/new", cloned: false, worktrees: [] },
+      ],
+    });
+
+    const chat = ctx.store.create("ws", { providerId: "fake" });
+    await scopedRuntime.send(chat.id, "win-a", "hi");
+
+    expect(systemContent).toContain("- github.com/org/bare\n    - no worktree checked out");
+    expect(systemContent).toContain("- github.com/org/new\n    - not cloned yet");
+    expect(systemContent).not.toContain("No connected");
+  });
+
+  it("lets a tool check out a worktree, which is then in scope for the next request", async () => {
+    const repos = [
+      {
+        repo: "github.com/org/bare",
+        cloned: true,
+        worktrees: [] as Array<{ branch: string; path: string }>,
+      },
+    ];
+    const addWorktree = vi.fn(async (_chatId: string, repo: string, branch: string) => {
+      const path = `/worktrees/${branch}`;
+      repos.find((r) => r.repo === repo)!.worktrees.push({ branch, path });
+      return { ok: true, path };
+    });
+    const seen: Array<{ roots?: string[] }> = [];
+    ctx.tools.register({
+      name: "create_worktree",
+      description: "check out",
+      parameters: { type: "object", properties: {} },
+      execute: async (args, toolCtx) => {
+        const r = await toolCtx.addWorktree!(String(args.repo), String(args.branch));
+        return { content: r.path ?? "" };
+      },
+    });
+    ctx.tools.register({
+      name: "read_file",
+      description: "read",
+      parameters: { type: "object", properties: {} },
+      execute: async (_args, toolCtx) => {
+        seen.push({ roots: toolCtx.roots });
+        return { content: "x" };
+      },
+    });
+    const systems: string[] = [];
+    let call = 0;
+    const script: ProviderDelta[][] = [
+      [
+        {
+          type: "tool_call",
+          id: "c1",
+          name: "create_worktree",
+          arguments: '{"repo":"github.com/org/bare","branch":"dev"}',
+        },
+      ],
+      [
+        {
+          type: "tool_call",
+          id: "c2",
+          name: "read_file",
+          arguments: '{"path":"/worktrees/dev/a"}',
+        },
+      ],
+      [{ type: "text", text: "done" }],
+    ];
+    const provider: ChatProvider = {
+      id: "fake",
+      label: "Fake",
+      ping: async () => true,
+      async *streamChat(req: ChatStreamRequest): AsyncIterable<ProviderDelta> {
+        systems.push(req.messages[0]?.content ?? "");
+        for (const d of script[Math.min(call++, script.length - 1)]) yield d;
+      },
+    };
+    ctx.providers.register({ id: "fake", label: "Fake", create: () => provider });
+
+    const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
+      getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
+      getConnectedRepositories: async () => structuredClone(repos),
+      addWorktree,
+    });
+    const chat = ctx.store.create("ws", { providerId: "fake" });
+    await scopedRuntime.send(chat.id, "win-a", "work on dev");
+
+    expect(addWorktree).toHaveBeenCalledWith(chat.id, "github.com/org/bare", "dev");
+    expect(seen).toEqual([{ roots: ["/worktrees/dev"] }]);
+    expect(systems[0]).toContain("no worktree checked out");
+    expect(systems[0]).toContain("create_worktree");
+    expect(systems[1]).toContain("    - branch dev: /worktrees/dev");
   });
 });

@@ -13,6 +13,7 @@ import {
   createWindow,
   createSidebarTab,
 } from "@openp41ge/layout/types";
+import type { WorkspaceFileData } from "@openp41ge/layout/types";
 import {
   WORKSPACE_FILE_VERSION,
   migrateWorkspaceFileData,
@@ -23,6 +24,7 @@ import {
   serializeWorkspaceFile,
   deserializeWorkspaceFile,
   mergeManifestEdits,
+  withWorktree,
 } from "@openp41ge/layout/workspace-file";
 
 const V1_MANIFEST = {
@@ -239,5 +241,34 @@ describe("mergeManifestEdits", () => {
     expect(
       mergeManifestEdits(base, file({ repos: [A, B] }), file({ repos: [theirsA, B] })).repos,
     ).toEqual([theirsA, B]);
+  });
+});
+
+describe("withWorktree", () => {
+  const file = (repos: WorkspaceFileData["repos"]): WorkspaceFileData => ({
+    id: "w",
+    version: 2,
+    createdAt: "t",
+    dataDir: "",
+    repos,
+  });
+
+  it("adds a branch to the worktrees of the repo with that name", () => {
+    const data = file([
+      { url: "git@github.com:o/a.git", worktrees: ["main"] },
+      { url: "https://github.com/o/b", worktrees: [] },
+    ]);
+    expect(withWorktree(data, "github.com/o/b", "dev")?.repos).toEqual([
+      { url: "git@github.com:o/a.git", worktrees: ["main"] },
+      { url: "https://github.com/o/b", worktrees: ["dev"] },
+    ]);
+    // The data it was given is left as it was.
+    expect(data.repos[1].worktrees).toEqual([]);
+  });
+
+  it("is null when the branch is already there or the repo is not listed", () => {
+    const data = file([{ url: "git@github.com:o/a.git", worktrees: ["main"] }]);
+    expect(withWorktree(data, "github.com/o/a", "main")).toBeNull();
+    expect(withWorktree(data, "github.com/o/z", "main")).toBeNull();
   });
 });

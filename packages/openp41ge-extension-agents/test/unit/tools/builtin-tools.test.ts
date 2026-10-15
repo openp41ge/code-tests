@@ -1,7 +1,7 @@
 /**
  * Verifies the built-in agent tools register through their own packages.
  *
- * Each built-in tool (read_file, search_files) lives in a separate package and
+ * Each built-in tool (read_file, search_files, …) lives in a separate package and
  * self-registers via `register(registry)`. This test exercises the aggregate
  * `registerBuiltinTools` entry point so a regression in the plugin wiring fails
  * loudly.
@@ -12,14 +12,20 @@ import { ToolRegistry } from "@openp41ge-extension-agents/backend/tool-registry"
 import { registerBuiltinTools } from "@openp41ge-extension-agents/tools/index";
 
 describe("registerBuiltinTools", () => {
-  it("registers only read_file, search_files, edit_file, create_or_replace_file (run_command disabled)", () => {
+  it("registers only read_file, search_files, edit_file, create_or_replace_file, create_worktree (run_command disabled)", () => {
     const registry = new ToolRegistry();
     registerBuiltinTools(registry);
     const names = registry
       .list()
       .map((t) => t.name)
       .sort();
-    expect(names).toEqual(["create_or_replace_file", "edit_file", "read_file", "search_files"]);
+    expect(names).toEqual([
+      "create_or_replace_file",
+      "create_worktree",
+      "edit_file",
+      "read_file",
+      "search_files",
+    ]);
   });
 
   it("each registered tool exposes the full tool contract", () => {
