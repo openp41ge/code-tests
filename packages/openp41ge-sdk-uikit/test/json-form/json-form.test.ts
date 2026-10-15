@@ -4,8 +4,8 @@
  * property; an unset field shows its default, faded; a setting with a
  * default always has a Reset icon (greyed out while unset), which removes the
  * user's value. Each edit emits `json-form-change` with the full user values
- * (the host validates and saves). Lists edit item by item; lists of objects
- * are cards (accordion segments) with add, remove and reorder.
+ * (the host validates and saves). Every object and array is a card that
+ * opens a drawer from the right with it as a form; drawers stack.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import "../../src/json-form/json-form";
@@ -49,6 +49,15 @@ async function mount(props: Record<string, unknown> = {}) {
 const fieldOf = (root, key) => root.querySelector(`[data-key="${key}"]`);
 const control = (root, key) =>
   fieldOf(root, key).querySelector("input, openp41ge-select, openp41ge-toggle");
+
+/** The card of an object or array setting, and the drawer it opens. */
+const card = (root, key) => root.querySelector(`.jf-sub[data-key="${key}"]`);
+const drawer = (root, key) => root.querySelector(`.jf-drawer[data-drawer="${key}"]`);
+async function open(el, root, key) {
+  card(root, key).click();
+  await el.updateComplete;
+  return drawer(root, key);
+}
 
 async function typeInto(el, input, text) {
   input.value = text;
@@ -197,11 +206,14 @@ describe("json-form fields", () => {
     expect(changes.at(-1)).toEqual({ name: "Ada" });
   });
 
-  it("an object is a group (fieldset/legend) of its fields", async () => {
+  it("an object is a card; clicking it opens a drawer with its fields", async () => {
     const { el, root, changes } = await mount();
-    const group = fieldOf(root, "nested");
-    expect(group.tagName.toLowerCase()).toBe("fieldset");
-    expect(group.querySelector("legend").textContent).toContain("Nested");
+    expect(root.querySelector("fieldset")).toBeNull();
+    expect(card(root, "nested").querySelector(".jf-sub-title").textContent).toContain("Nested");
+    expect(fieldOf(root, "nested.depth")).toBeNull();
+    const d = await open(el, root, "nested");
+    expect(d.getAttribute("role")).toBe("dialog");
+    expect(d.querySelector(".jf-drawer-title").textContent).toContain("Nested");
     await typeInto(el, control(root, "nested.depth"), "4");
     expect(changes.at(-1)).toEqual({ nested: { depth: 4 } });
   });
@@ -224,12 +236,13 @@ describe("json-form fields", () => {
     expect(control(root, "size").value).toBe("0");
   });
 
-  it("readonly: nothing can be edited", async () => {
-    const { root } = await mount({ readonly: true, value: { size: 5, tags: ["a"] } });
+  it("readonly: nothing can be edited (drawers still open, to look)", async () => {
+    const { el, root } = await mount({ readonly: true, value: { size: 5, tags: ["a"] } });
+    await open(el, root, "tags");
     for (const input of root.querySelectorAll("input, openp41ge-select"))
       expect(input.disabled).toBe(true);
     expect(control(root, "enabled").disabled).toBe(true);
-    expect(root.querySelector("button:not([disabled])")).toBeNull();
+    expect(root.querySelector("button:not([disabled]):not(.jf-drawer-close)")).toBeNull();
   });
 
   it("emits a bubbling, composed json-form-change", async () => {
@@ -243,53 +256,225 @@ describe("json-form fields", () => {
 });
 
 describe("json-form lists", () => {
-  it("a list of values: edit, add and remove items", async () => {
+  it("a list of values: a card; its drawer edits, adds and removes items", async () => {
     const { el, root, changes } = await mount({ value: { tags: ["a", "b"] } });
-    const items = () => fieldOf(root, "tags").querySelectorAll(".jf-list-item input");
+    const d = await open(el, root, "tags");
+    const items = () => d.querySelectorAll(".jf-list-item input");
     expect([...items()].map((i) => i.value)).toEqual(["a", "b"]);
     await typeInto(el, items()[1], "c");
     expect(changes.at(-1)).toEqual({ tags: ["a", "c"] });
-    fieldOf(root, "tags").querySelector('button[aria-label="Add to Tags"]').click();
+    d.querySelector('button[aria-label="Add to Tags"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ tags: ["a", "c", ""] });
-    fieldOf(root, "tags").querySelector('button[aria-label="Remove item 1 of Tags"]').click();
+    d.querySelector('button[aria-label="Remove item 1 of Tags"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ tags: ["c", ""] });
   });
 
-  it("a list of objects: a card of segments, one per item, titled by its first text", async () => {
-    const { root } = await mount({
+  it("a list of objects: its drawer has a card per item, titled by its first text", async () => {
+    const { el, root } = await mount({
       value: { hosts: [{ url: "a.example" }, { url: "b.example" }] },
     });
-    const segs = fieldOf(root, "hosts").querySelectorAll(".jf-card > .jf-seg");
-    expect([...segs].map((s) => s.querySelector(".jf-seg-title").textContent.trim())).toEqual([
+    const d = await open(el, root, "hosts");
+    const cards = [...d.querySelectorAll(".jf-sub")];
+    expect(cards.map((c) => c.querySelector(".jf-sub-title").textContent.trim())).toEqual([
       "a.example",
       "b.example",
     ]);
   });
 
-  it("opening an item shows its fields; editing one sets the list", async () => {
+  it("an item's card opens its own drawer; editing a field sets the list", async () => {
     const { el, root, changes } = await mount({ value: { hosts: [{ url: "a.example" }] } });
-    fieldOf(root, "hosts").querySelector(".jf-seg-head").click();
-    await el.updateComplete;
+    await open(el, root, "hosts");
+    await open(el, root, "hosts[0]");
     await typeInto(el, control(root, "hosts[0].port"), "8080");
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "a.example", port: 8080 }] });
   });
 
-  it("add, remove and reorder items", async () => {
+  it("add, remove and reorder items; an added item opens", async () => {
     const { el, root, changes } = await mount({
       value: { hosts: [{ url: "a" }, { url: "b" }] },
     });
-    const hosts = () => fieldOf(root, "hosts");
-    hosts().querySelector('button[aria-label="Move item 1 of Hosts down"]').click();
+    const d = await open(el, root, "hosts");
+    d.querySelector('button[aria-label="Move item 1 of Hosts down"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "b" }, { url: "a" }] });
-    hosts().querySelector('button[aria-label="Add to Hosts"]').click();
+    d.querySelector('button[aria-label="Remove item 1 of Hosts"]').click();
     await el.updateComplete;
-    expect(changes.at(-1)).toEqual({ hosts: [{ url: "b" }, { url: "a" }, {}] });
-    hosts().querySelector('button[aria-label="Remove item 1 of Hosts"]').click();
+    expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }] });
+    d.querySelector('button[aria-label="Add to Hosts"]').click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: [{ url: "a" }, {}] });
+    expect(drawer(root, "hosts[1]")).not.toBeNull();
+  });
+});
+
+describe("json-form cards", () => {
+  it("a card shows metadata about its value, not its properties", async () => {
+    const { root } = await mount({ value: { tags: ["a", "b", "c"], hosts: [{ url: "x" }] } });
+    const meta = (key) =>
+      card(root, key).querySelector(".jf-meta").textContent.replace(/\s+/g, " ");
+    expect(meta("tags")).toContain("3 strings");
+    expect(meta("hosts")).toContain("1 object");
+    expect(meta("nested")).toContain("1 property");
+    expect(meta("nested")).toContain("0 set");
+  });
+
+  it("a card counts what is set and default inside it, and its errors", async () => {
+    const { root } = await mount({
+      schema: {
+        type: "object",
+        properties: {
+          box: {
+            type: "object",
+            title: "Box",
+            properties: {
+              w: { type: "integer", default: 1 },
+              h: { type: "integer", default: 2 },
+              d: { type: "integer" },
+            },
+          },
+        },
+      },
+      defaults: { box: { w: 1, h: 2 } },
+      value: { box: { w: 5, d: 0 } },
+      errors: [{ path: "box.d", message: "box.d: must be at least 1" }],
+    });
+    const meta = card(root, "box").querySelector(".jf-meta").textContent.replace(/\s+/g, " ");
+    expect(meta).toContain("3 properties");
+    expect(meta).toContain("2 set");
+    expect(meta).toContain("1 default");
+    expect(card(root, "box").querySelector(".jf-meta-error").textContent).toContain("1 error");
+  });
+
+  it("a card opens with Enter too", async () => {
+    const { el, root } = await mount();
+    card(root, "nested").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    await el.updateComplete;
+    expect(drawer(root, "nested")).not.toBeNull();
+  });
+});
+
+describe("json-form drawers", () => {
+  const deep = {
+    type: "object",
+    properties: {
+      a: {
+        type: "object",
+        title: "A",
+        properties: {
+          b: {
+            type: "object",
+            title: "B",
+            properties: {
+              c: { type: "object", title: "C", properties: { x: { type: "string" } } },
+            },
+          },
+        },
+      },
+    },
+  };
+  const mountDeep = () => mount({ schema: deep, defaults: {} });
+  const state = (root) =>
+    [...root.querySelectorAll(".jf-drawer")].map((d) => [
+      d.dataset.drawer,
+      d.classList.contains("jf-drawer--front")
+        ? "front"
+        : d.classList.contains("jf-drawer--back")
+          ? "back"
+          : d.classList.contains("jf-drawer--hidden")
+            ? "hidden"
+            : "?",
+    ]);
+
+  it("the first drawer is at the front; a child goes to the front and its parent back; a third hides the first", async () => {
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    expect(state(root)).toEqual([["a", "front"]]);
+    await open(el, root, "a.b");
+    expect(state(root)).toEqual([
+      ["a", "back"],
+      ["a.b", "front"],
+    ]);
+    await open(el, root, "a.b.c");
+    expect(state(root)).toEqual([
+      ["a", "hidden"],
+      ["a.b", "back"],
+      ["a.b.c", "front"],
+    ]);
+  });
+
+  it("the front drawer is 80% wide, the one behind it 90%", async () => {
+    const { el } = await mountDeep();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-drawer--front\s*\{[^}]*width: 80%/);
+    expect(css).toMatch(/\.jf-drawer--back\s*\{[^}]*width: 90%/);
+    expect(css).toMatch(/\.jf-drawer--hidden\s*\{[^}]*visibility: hidden/);
+  });
+
+  it("one shadow and one mask for the whole stack; the drawers cast none", async () => {
+    const { el, root } = await mountDeep();
+    expect(root.querySelector(".jf-drawer-shadow")).toBeNull();
+    await open(el, root, "a");
+    await open(el, root, "a.b");
+    expect(root.querySelectorAll(".jf-drawer-shadow").length).toBe(1);
+    expect(root.querySelectorAll(".jf-mask").length).toBe(1);
+    // The shadow is as wide as the widest drawer in view.
+    expect(root.querySelector(".jf-drawer-shadow").classList.contains("jf-drawer--back")).toBe(
+      true,
+    );
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).not.toMatch(/\.jf-drawer\s*\{[^}]*box-shadow/);
+    expect(css).toMatch(/\.jf-drawer-shadow\s*\{[^}]*box-shadow/);
+  });
+
+  it("the header shows the trail; close returns to the parent", async () => {
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    await open(el, root, "a.b");
+    expect(drawer(root, "a.b").querySelector(".jf-drawer-trail").textContent).toContain("A");
+    drawer(root, "a.b").querySelector('button[aria-label="Close B"]').click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([["a", "front"]]);
+  });
+
+  it("Escape closes the front drawer; a click on the parent's strip goes back to it; the mask closes all", async () => {
+    const { el, root } = await mountDeep();
+    await open(el, root, "a");
+    await open(el, root, "a.b");
+    await open(el, root, "a.b.c");
+    drawer(root, "a.b.c").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await el.updateComplete;
+    expect(state(root).map(([k]) => k)).toEqual(["a", "a.b"]);
+    await open(el, root, "a.b.c");
+    drawer(root, "a").click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([
+      ["a", "hidden"],
+      ["a.b", "back"],
+      ["a.b.c", "front"],
+    ]);
+    drawer(root, "a.b").click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([
+      ["a", "back"],
+      ["a.b", "front"],
+    ]);
+    root.querySelector(".jf-mask").click();
+    await el.updateComplete;
+    expect(state(root)).toEqual([]);
+  });
+
+  it("the form scrolls itself, so the drawers cover what is in view", async () => {
+    const { el, root } = await mountDeep();
+    expect(root.querySelector(".jf-scroll")).not.toBeNull();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    expect(css).toMatch(/\.jf-scroll\s*\{[^}]*overflow: auto/);
+    expect(css).toMatch(/\.jf-layer\s*\{[^}]*position: absolute/);
   });
 });
 
@@ -317,23 +502,23 @@ describe("json-form maps", () => {
   const mapDefaults = { defaultHost: "a", hosts: { a: { url: "a.example" } } };
   const mountMap = (value = {}) => mount({ schema: mapSchema, defaults: mapDefaults, value });
 
-  it("a map with a default has Reset in its head, greyed out until the user changes it", async () => {
+  it("a map with a default has Reset on its card, greyed out until the user changes it", async () => {
     const { el, root, changes } = await mountMap();
-    const reset = () => fieldOf(root, "hosts").querySelector('button[aria-label="Reset Hosts"]');
+    const reset = () => card(root, "hosts").querySelector('button[aria-label="Reset Hosts"]');
     expect(reset().disabled).toBe(true);
-    expect(reset().parentElement.classList.contains("jf-head")).toBe(true);
     el.value = { hosts: { b: { url: "b.example" } } };
     await el.updateComplete;
     reset().click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({});
   });
-  const segs = (root) => [...fieldOf(root, "hosts").querySelectorAll(".jf-card > .jf-seg")];
+  const segs = (root) => [...drawer(root, "hosts").querySelectorAll(".jf-sub")];
   const btn = (root, label) => root.querySelector(`button[aria-label="${label}"]`);
 
-  it("a map of objects: a card of segments titled by key; the x-keysOf one is Default", async () => {
-    const { root } = await mountMap({ hosts: { b: { url: "b.example" } } });
-    expect(segs(root).map((s) => s.querySelector(".jf-seg-title").textContent.trim())).toEqual([
+  it("a map of objects: its drawer has a card per key; the x-keysOf one is Default", async () => {
+    const { el, root } = await mountMap({ hosts: { b: { url: "b.example" } } });
+    await open(el, root, "hosts");
+    expect(segs(root).map((s) => s.querySelector(".jf-sub-title").textContent.trim())).toEqual([
       "a",
       "b",
     ]);
@@ -345,6 +530,7 @@ describe("json-form maps", () => {
     const { el, root, changes } = await mountMap({ hosts: { b: {} } });
     const select = control(root, "defaultHost");
     expect(select.options.map((o) => o.label)).toEqual(["a", "b"]);
+    await open(el, root, "hosts");
     btn(root, "Make b the default host").click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: { b: {} }, defaultHost: "b" });
@@ -352,15 +538,16 @@ describe("json-form maps", () => {
 
   it("opening an entry shows its fields; editing one sets it", async () => {
     const { el, root, changes } = await mountMap();
-    segs(root)[0].querySelector(".jf-seg-head").click();
-    await el.updateComplete;
+    await open(el, root, "hosts");
+    await open(el, root, "hosts.a");
     await typeInto(el, control(root, "hosts.a.url"), "x.example");
     expect(changes.at(-1)).toEqual({ hosts: { a: { url: "x.example" } } });
   });
 
   it("adds an entry under a new key; an empty or taken key cannot be added", async () => {
     const { el, root, changes } = await mountMap();
-    const key = fieldOf(root, "hosts").querySelector('input[aria-label="New key for Hosts"]');
+    await open(el, root, "hosts");
+    const key = drawer(root, "hosts").querySelector('input[aria-label="New key for Hosts"]');
     const add = btn(root, "Add to Hosts");
     expect(add.disabled).toBe(true);
     await typeInto(el, key, "a");
@@ -369,18 +556,22 @@ describe("json-form maps", () => {
     add.click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ hosts: { c: {} } });
-    expect(segs(root)[1].classList.contains("jf-seg--open")).toBe(true);
+    expect(drawer(root, "hosts.c")).not.toBeNull();
   });
 
   it("renames and removes the user's entries; the default follows a rename", async () => {
     const { el, root, changes } = await mountMap({ defaultHost: "b", hosts: { b: { url: "b" } } });
-    segs(root)[1].querySelector(".jf-seg-head").click();
-    await el.updateComplete;
-    const key = segs(root)[1].querySelector('input[aria-label="Key of b"]');
+    await open(el, root, "hosts");
+    await open(el, root, "hosts.b");
+    const key = drawer(root, "hosts.b").querySelector('input[aria-label="Key of b"]');
     key.value = "d";
     key.dispatchEvent(new Event("change", { bubbles: true }));
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ defaultHost: "d", hosts: { d: { url: "b" } } });
+    // Its drawer follows the rename.
+    expect(drawer(root, "hosts.d")).not.toBeNull();
+    drawer(root, "hosts.d").querySelector('button[aria-label="Close d"]').click();
+    await el.updateComplete;
     btn(root, "Remove d from Hosts").click();
     await el.updateComplete;
     expect(changes.at(-1)).toEqual({ defaultHost: "d" });
@@ -388,14 +579,17 @@ describe("json-form maps", () => {
 
   it("an entry from the defaults cannot be removed or renamed", async () => {
     const { el, root } = await mountMap();
+    await open(el, root, "hosts");
     expect(btn(root, "Remove a from Hosts").disabled).toBe(true);
-    segs(root)[0].querySelector(".jf-seg-head").click();
-    await el.updateComplete;
-    expect(segs(root)[0].querySelector('input[aria-label="Key of a"]').disabled).toBe(true);
+    await open(el, root, "hosts.a");
+    expect(drawer(root, "hosts.a").querySelector('input[aria-label="Key of a"]').disabled).toBe(
+      true,
+    );
   });
 
   it("a map of values: one row per key; clearing a nullable value sets null", async () => {
     const { el, root, changes } = await mountMap({ levels: { Low: "low" } });
+    await open(el, root, "levels");
     const input = control(root, "levels.Low");
     expect(input.value).toBe("low");
     await typeInto(el, input, "");

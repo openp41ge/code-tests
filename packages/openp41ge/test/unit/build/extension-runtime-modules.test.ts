@@ -44,8 +44,14 @@ describe("extension runtime modules", () => {
     );
   });
 
-  it.each(RUNTIME_SPECIFIERS)("%s has no default export", async (specifier) => {
-    const mod = (await import(/* @vite-ignore */ specifier)) as Record<string, unknown>;
-    expect(Object.keys(mod)).not.toContain("default");
-  });
+  // Importing the whole UI kit cold takes ~2s alone and over the default 5s
+  // when the full suite runs in parallel.
+  it.each(RUNTIME_SPECIFIERS)(
+    "%s has no default export",
+    async (specifier) => {
+      const mod = (await import(/* @vite-ignore */ specifier)) as Record<string, unknown>;
+      expect(Object.keys(mod)).not.toContain("default");
+    },
+    30_000,
+  );
 });
