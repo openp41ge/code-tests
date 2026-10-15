@@ -438,6 +438,20 @@ describe("json-form drawers", () => {
     expect(css).toMatch(/\.jf-drawer--hidden\s*\{[^}]*visibility: hidden/);
   });
 
+  it("a drawer going hidden stays in view until the one in front has widened over it", async () => {
+    const { el } = await mountDeep();
+    const css = el.constructor.elementStyles.map((s) => s.cssText).join("\n");
+    const widen = css.match(/\.jf-drawer\s*\{[^}]*transition: width ([\d.]+s)/)[1];
+    // Hiding waits for the widening; showing again does not (the one in
+    // front shrinks off it).
+    expect(css).toMatch(
+      new RegExp(
+        `\\.jf-drawer--hidden\\s*\\{[^}]*transition:\\s*width ${widen}[^;]*,\\s*visibility 0s ${widen}`,
+      ),
+    );
+    expect(css).not.toMatch(/\.jf-drawer\s*\{[^}]*visibility 0s [\d.]/);
+  });
+
   it("one shadow and one mask for the whole stack; the drawers cast none", async () => {
     const { el, root } = await mountDeep();
     expect(root.querySelector(".jf-drawer-shadow")).toBeNull();
