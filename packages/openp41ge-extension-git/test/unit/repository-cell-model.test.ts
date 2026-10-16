@@ -9,7 +9,7 @@ import {
   filesSection,
   type RepositoryCellApi,
 } from "@openp41ge-extension-git/repository-cell-model";
-import type { BranchEntry, CommitEntry, DiffStatEntry } from "@openp41ge-extension-git/git-types";
+import type { BranchEntry, CommitEntry, DiffStatEntry } from "openp41ge-sdk-git";
 
 const REPO = "github.com/acme/app";
 

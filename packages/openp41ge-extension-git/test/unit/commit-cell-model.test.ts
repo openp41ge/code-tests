@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { CommitCellModel, type CommitCellApi } from "@openp41ge-extension-git/commit-cell-model";
-import type { CommitEntry, DiffStatEntry } from "@openp41ge-extension-git/git-types";
+import type { CommitEntry, DiffStatEntry } from "openp41ge-sdk-git";
 
 const REPO = "github.com/acme/app";
 const entry: CommitEntry = {

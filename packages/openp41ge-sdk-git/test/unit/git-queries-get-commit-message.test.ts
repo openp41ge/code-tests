@@ -8,7 +8,7 @@ import { execSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { GitQueries } from "@openp41ge-extension-git/git-queries";
+import { GitQueries } from "@openp41ge-sdk-git/git-queries";
 import { localGitRunner } from "./local-git-runner";
 
 function git(cwd: string, args: string[]): string {

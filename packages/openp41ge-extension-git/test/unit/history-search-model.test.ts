@@ -12,7 +12,7 @@ import {
   resultsSummary,
   type HistorySearchApi,
 } from "@openp41ge-extension-git/history-search-model";
-import type { SearchResultCommit } from "@openp41ge-extension-git/git-types";
+import type { SearchResultCommit } from "openp41ge-sdk-git";
 
 const result = (repoName: string, n: number, date: string): SearchResultCommit => ({
   repoName,
@@ -41,7 +41,10 @@ function fakeWindows(length: Record<string, number>) {
   });
 }
 
-function setup(over: Partial<HistorySearchApi> = {}, length = { [REPOS[0]]: 300, [REPOS[1]]: 300 }) {
+function setup(
+  over: Partial<HistorySearchApi> = {},
+  length = { [REPOS[0]]: 300, [REPOS[1]]: 300 },
+) {
   const api: HistorySearchApi = {
     searchWindow: fakeWindows(length),
     matchContext: vi.fn(async () => ({ text: "the body says fix", in: "body" as const })),

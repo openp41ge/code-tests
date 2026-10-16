@@ -5,7 +5,7 @@
  */
 import { execFile } from "child_process";
 import path from "path";
-import type { GitRunner } from "@openp41ge-extension-git/git-queries";
+import type { GitRunner } from "@openp41ge-sdk-git/git-queries";
 
 export function localGitRunner(reposDir: string): GitRunner {
   return (repoName, args, worktree, okExitCodes) => {

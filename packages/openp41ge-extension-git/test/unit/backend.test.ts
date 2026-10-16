@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import type { GitRequest, GitResult, HandlerContext } from "openp41ge-sdk";
 import { GIT_COMMANDS } from "@openp41ge-extension-git/backend";
-import { localGitRunner } from "./local-git-runner";
+import { localGitRunner } from "../../../openp41ge-sdk-git/test/unit/local-git-runner";
 
 const APP = "github.com/acme/app";
 let root: string;

@@ -4,7 +4,7 @@
  * carry the added/removed/context kind plus the old|new line-number pair.
  */
 import { describe, it, expect } from "vitest";
-import { buildInlineDiffFile } from "@openp41ge-extension-git/build-inline-diff-file";
+import { buildInlineDiffFile } from "@openp41ge-sdk-git/build-inline-diff-file";
 
 describe("buildInlineDiffFile", () => {
   it("returns the FULL file text with removed lines spliced in and no @@ headers", () => {
