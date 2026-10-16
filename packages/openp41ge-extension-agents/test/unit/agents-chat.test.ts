@@ -1096,6 +1096,43 @@ describe("AgentsChat (custom element)", () => {
     );
   });
 
+  it("focuses the composer on mousedown and keeps the browser from moving focus away", async () => {
+    // The composer's text is a plain div drawn over a hidden textarea. A click
+    // there must focus the textarea and cancel mousedown's default, which
+    // would otherwise move focus to <body> right after (no caret, typing lost).
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      button: 0,
+    });
+    content.dispatchEvent(down);
+    expect(el.shadowRoot!.activeElement).toBe(inputEl);
+    expect(down.defaultPrevented).toBe(true);
+  });
+
+  it("leaves mousedown alone for a button other than the primary one", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector(".composer-content") as HTMLElement;
+    const down = new MouseEvent("mousedown", {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      button: 2,
+    });
+    content.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(false);
+  });
+
   it("does not send when the composer is empty", async () => {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);
