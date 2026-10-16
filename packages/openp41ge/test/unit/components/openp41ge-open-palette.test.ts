@@ -146,6 +146,17 @@ describe("openp41ge-open-palette", () => {
     expect(b.onclose).toHaveBeenCalledOnce();
   });
 
+  it("mentions Tab only when a result can open in another tab type", async () => {
+    const { el } = await mount();
+    const hint = () => el.querySelector(".op-hint")!.textContent!;
+    await type(el, "readme");
+    expect(hint()).toContain("other tab type");
+    await type(el, "new ch");
+    expect(hint()).not.toContain("other tab type");
+    expect(hint()).not.toContain("⇥");
+    el.close();
+  });
+
   it("leaves no icon space on a result without an icon", async () => {
     const { el } = await mount({
       gather: async (_q, on) =>
