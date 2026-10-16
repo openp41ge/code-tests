@@ -92,7 +92,15 @@ function makeHost(
     config,
   } as unknown as ExplorerHost;
   litRender(renderExplorer(host), container);
-  return { host, container, dispatch, openTab, get state() { return state; } };
+  return {
+    host,
+    container,
+    dispatch,
+    openTab,
+    get state() {
+      return state;
+    },
+  };
 }
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -134,7 +142,10 @@ describe("renderExplorer", () => {
     };
     const other: WorkspaceRepoInfo = { name: "other", worktrees: [] };
     const h = makeHost({ workspaceRepos: [two, other] }, () =>
-      Promise.resolve({ ok: true, entries: [{ name: "a.txt", path: "/w/repo/main/a.txt", kind: "file" }] }),
+      Promise.resolve({
+        ok: true,
+        entries: [{ name: "a.txt", path: "/w/repo/main/a.txt", kind: "file" }],
+      }),
     );
     rowByType(h.container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     rowByType(h.container, "worktree").dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -203,11 +214,9 @@ describe("renderExplorer", () => {
 
   it("collapses an expanded worktree without a re-dispatch", async () => {
     const dispatchImpl = () => Promise.resolve({ ok: true, entries: [] });
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "a.txt", path: "/w/repo/a.txt", kind: "file" }],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "a.txt", path: "/w/repo/a.txt", kind: "file" },
+    ]);
     const { container, dispatch } = makeHost({ workspaceRepos: [REPO] }, dispatchImpl, initial);
 
     // Expand the repo: worktree (already expanded) + its file + the two create
@@ -225,14 +234,10 @@ describe("renderExplorer", () => {
   });
 
   it("tags only file rows as the extension's file drag source", async () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [
-        { name: "a.txt", path: "/w/repo/a.txt", kind: "file" },
-        { name: "src", path: "/w/repo/src", kind: "dir" },
-      ],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "a.txt", path: "/w/repo/a.txt", kind: "file" },
+      { name: "src", path: "/w/repo/src", kind: "dir" },
+    ]);
     const { container } = makeHost({ workspaceRepos: [REPO] }, undefined, initial);
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -254,11 +259,9 @@ describe("renderExplorer", () => {
   });
 
   it("opens a file in the host editor after the open-file gate passes", async () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "a.txt", path: "/w/repo/a.txt", kind: "file" }],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "a.txt", path: "/w/repo/a.txt", kind: "file" },
+    ]);
     const { container, dispatch, openTab } = makeHost(
       { workspaceRepos: [REPO] },
       () => Promise.resolve({ ok: true }),
@@ -266,9 +269,9 @@ describe("renderExplorer", () => {
     );
 
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    container.querySelector(".row[data-kind='file']")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    container
+      .querySelector(".row[data-kind='file']")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flush();
 
     expect(dispatch).toHaveBeenCalledWith("open-file", { path: "/w/repo/a.txt", root: "/w/repo" });
@@ -280,11 +283,9 @@ describe("renderExplorer", () => {
   });
 
   it("pins a file when it is double-clicked in quick succession", async () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "b.txt", path: "/w/repo/b.txt", kind: "file" }],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "b.txt", path: "/w/repo/b.txt", kind: "file" },
+    ]);
     const { container, openTab } = makeHost(
       { workspaceRepos: [REPO] },
       () => Promise.resolve({ ok: true }),
@@ -309,14 +310,10 @@ describe("renderExplorer", () => {
   });
 
   it("does not pin single clicks in quick succession on different files", async () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [
-        { name: "c.txt", path: "/w/repo/c.txt", kind: "file" },
-        { name: "d.txt", path: "/w/repo/d.txt", kind: "file" },
-      ],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "c.txt", path: "/w/repo/c.txt", kind: "file" },
+      { name: "d.txt", path: "/w/repo/d.txt", kind: "file" },
+    ]);
     const { container, openTab } = makeHost(
       { workspaceRepos: [REPO] },
       () => Promise.resolve({ ok: true }),
@@ -335,11 +332,9 @@ describe("renderExplorer", () => {
   });
 
   it("does not open a file the backend gate rejects", async () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "secret.txt", path: "/outside/secret.txt", kind: "file" }],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "secret.txt", path: "/outside/secret.txt", kind: "file" },
+    ]);
     const { container, openTab } = makeHost(
       { workspaceRepos: [REPO] },
       () => Promise.resolve({ ok: false, error: "outside root" }),
@@ -347,19 +342,17 @@ describe("renderExplorer", () => {
     );
 
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    container.querySelector(".row[data-kind='file']")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    container
+      .querySelector(".row[data-kind='file']")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flush();
     expect(openTab).not.toHaveBeenCalled();
   });
 
   it("adds an add-worktree row (but no folder/file rows) to a repo grouping row", () => {
-    const initial = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "a.txt", path: "/w/repo/a.txt", kind: "file" }],
-    );
+    const initial = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "a.txt", path: "/w/repo/a.txt", kind: "file" },
+    ]);
     const { container } = makeHost({ workspaceRepos: [REPO] }, undefined, initial);
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     // repo + worktree + a.txt + the two create rows *under the worktree*
@@ -442,9 +435,9 @@ describe("renderExplorer", () => {
       root: "/w/repo",
     });
     // The refreshed listing now shows the new file.
-    expect(container.querySelector(".row[data-kind='file']")?.querySelector(".label")?.textContent).toBe(
-      "notes.md",
-    );
+    expect(
+      container.querySelector(".row[data-kind='file']")?.querySelector(".label")?.textContent,
+    ).toBe("notes.md");
   });
 
   it("Escape cancels an inline create row without creating anything", async () => {
@@ -520,11 +513,9 @@ describe("state helpers", () => {
   });
 
   it("applyReadDir fills a worktree's children, preserving the worktree root", () => {
-    const next = applyReadDir(
-      { roots: seedRoots([REPO]) },
-      "/w/repo",
-      [{ name: "src", path: "/w/repo/src", kind: "dir" }],
-    );
+    const next = applyReadDir({ roots: seedRoots([REPO]) }, "/w/repo", [
+      { name: "src", path: "/w/repo/src", kind: "dir" },
+    ]);
     const wt = next.roots[0].children[0];
     expect(wt.loaded).toBe(true);
     expect(wt.expanded).toBe(true);
@@ -567,7 +558,9 @@ describe("state helpers", () => {
     const expanded = setNodeExpanded(base, "/w/repo", true);
     expect(expanded.focusedId).toBe("/w/repo");
     expect(expanded.newEntry?.kind).toBe("worktree");
-    const filled = applyReadDir(base, "/w/repo", [{ name: "src", path: "/w/repo/src", kind: "dir" }]);
+    const filled = applyReadDir(base, "/w/repo", [
+      { name: "src", path: "/w/repo/src", kind: "dir" },
+    ]);
     expect(filled.focusedId).toBe("/w/repo");
     expect(filled.newEntryName).toBe("feat");
     const errored = setNodeError(base, "/w/repo", "boom");
@@ -606,7 +599,15 @@ describe("state helpers", () => {
             loaded: true,
             expanded: true,
             children: [
-              { path: "/w/repo/src/utils.ts", name: "utils.ts", kind: "file", root: "/w/repo", loaded: true, expanded: false, children: [] },
+              {
+                path: "/w/repo/src/utils.ts",
+                name: "utils.ts",
+                kind: "file",
+                root: "/w/repo",
+                loaded: true,
+                expanded: false,
+                children: [],
+              },
             ],
           },
         ],
@@ -646,7 +647,6 @@ describe("state helpers", () => {
     expect(added[1]).toMatchObject({ path: "org/new", nodeType: "repo", root: "org/new" });
     expect(addRepoNode(added, "repo")).toHaveLength(2);
   });
-
 });
 
 describe("add-worktree / add-repository create rows", () => {
@@ -747,7 +747,8 @@ describe("arrow-key navigation", () => {
   it("moves focus with Up/Down and collapses/expands with Left/Right", () => {
     const { container } = makeHost({ workspaceRepos: [REPO] });
     const tree = container.querySelector<HTMLElement>(".explorer-tree")!;
-    const press = (k: string) => tree.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+    const press = (k: string) =>
+      tree.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
 
     // Expand the repo, leaving focus on it.
     const repo = rowByType(container, "repo");
@@ -784,9 +785,9 @@ describe("arrow-key navigation", () => {
     const tree = container.querySelector<HTMLElement>(".explorer-tree")!;
     // Expand repo, then click the worktree's + add worktree row to enter edit mode.
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    container.querySelector<HTMLElement>(".row[data-new-entry='worktree']")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true }),
-    );
+    container
+      .querySelector<HTMLElement>(".row[data-new-entry='worktree']")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']")!;
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     expect(input.value).toBe("");
@@ -797,7 +798,8 @@ describe("arrow-key navigation", () => {
   it("Enter on a focused create row (reached via arrows) enters edit mode", async () => {
     const { container } = makeHost({ workspaceRepos: [REPO] });
     const tree = container.querySelector<HTMLElement>(".explorer-tree")!;
-    const press = (k: string) => tree.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+    const press = (k: string) =>
+      tree.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
 
     rowByType(container, "repo").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     press("ArrowDown"); // → worktree
@@ -807,9 +809,13 @@ describe("arrow-key navigation", () => {
     expect(addWt.classList.contains("new-entry-row")).toBe(false);
 
     press("Enter");
-    const editRow = container.querySelector<HTMLElement>(".row.new-entry-row[data-new-entry='worktree']");
+    const editRow = container.querySelector<HTMLElement>(
+      ".row.new-entry-row[data-new-entry='worktree']",
+    );
     expect(editRow).toBeTruthy();
-    expect(container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']")).toBeTruthy();
+    expect(
+      container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']"),
+    ).toBeTruthy();
   });
 
   it("uses the requested placeholder text for each create kind", async () => {
@@ -818,12 +824,18 @@ describe("arrow-key navigation", () => {
     // Worktree create row.
     const addWt = container.querySelector<HTMLElement>(".row[data-new-entry='worktree']")!;
     addWt.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']")!.placeholder).toBe("worktree name");
+    expect(
+      container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']")!.placeholder,
+    ).toBe("worktree name");
     // Cancel, then the repo create row.
-    container.querySelector<HTMLElement>(".new-entry-cancel")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    container
+      .querySelector<HTMLElement>(".new-entry-cancel")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const addRepo = container.querySelector<HTMLElement>(".row[data-new-entry='repo']")!;
     addRepo.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(container.querySelector<HTMLInputElement>("input[data-new-entry='repo']")!.placeholder).toBe("repository URL");
+    expect(
+      container.querySelector<HTMLInputElement>("input[data-new-entry='repo']")!.placeholder,
+    ).toBe("repository URL");
   });
 });
 
@@ -862,7 +874,11 @@ describe("row context menu", () => {
     const h = menuHost({});
     h.host.setState(() =>
       applyReadDir(
-        setNodeExpanded(setNodeExpanded({ roots: seedRoots([REPO]) }, "repo", true), "/w/repo", true),
+        setNodeExpanded(
+          setNodeExpanded({ roots: seedRoots([REPO]) }, "repo", true),
+          "/w/repo",
+          true,
+        ),
         "/w/repo",
         [
           { name: "src", path: "/w/repo/src", kind: "dir" },
@@ -957,6 +973,66 @@ describe("add rows while the platform works", () => {
     finish({ ok: true, path: "/w/repo/feat" });
     await flush();
     expect(pendingRow(container)).toBeNull();
+  });
+
+  it("keeps + add repository free while a clone runs, so another can be added", async () => {
+    const finishes: Array<(r: { ok: boolean; repoName?: string }) => void> = [];
+    const addRepository = vi.fn(() => ({
+      done: new Promise((r) => finishes.push(r)),
+      onProgress: () => () => {},
+      cancel: () => {},
+    }));
+    const { container } = makeHost({ workspaceRepos: [] }, undefined, undefined, {
+      addRepository,
+    });
+    const addRow = () =>
+      container.querySelector<HTMLElement>(".row.add-row[data-new-entry='repo']");
+    addRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    confirmCreate(container, "repo", "git@github.com:org/one.git");
+    expect(addRow()).not.toBeNull();
+    addRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    confirmCreate(container, "repo", "git@github.com:org/two.git");
+
+    expect(addRepository).toHaveBeenCalledTimes(2);
+    const pending = () =>
+      [...container.querySelectorAll<HTMLElement>(".row.pending-row .label")].map(
+        (l) => l.textContent,
+      );
+    expect(pending()).toEqual(["git@github.com:org/one.git", "git@github.com:org/two.git"]);
+    finishes[0]({ ok: true, repoName: "github.com/org/one" });
+    await flush();
+    expect(pending()).toEqual(["git@github.com:org/two.git"]);
+    expect(rowByType(container, "repo").textContent).toContain("github.com/org/one");
+  });
+
+  it("keeps a failed clone as its own row while another is being typed", async () => {
+    let fail!: (r: { ok: boolean; error?: string }) => void;
+    const addRepository = vi.fn(() => ({
+      done: new Promise((r) => (fail = r)),
+      onProgress: () => () => {},
+      cancel: () => {},
+    }));
+    const { container } = makeHost({ workspaceRepos: [] }, undefined, undefined, {
+      addRepository,
+    });
+    const addRow = () =>
+      container.querySelector<HTMLElement>(".row.add-row[data-new-entry='repo']");
+    addRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    confirmCreate(container, "repo", "git@github.com:org/one.git");
+    addRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input[data-new-entry='repo']") as HTMLInputElement;
+    input.value = "git@github.com:org/half";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    fail({ ok: false, error: "fatal: denied" });
+    await flush();
+    expect(
+      (container.querySelector("input[data-new-entry='repo']") as HTMLInputElement).value,
+    ).toBe("git@github.com:org/half");
+    const failed = pendingRow(container)!;
+    expect(failed.classList.contains("row--error")).toBe(true);
+    expect(failed.title).toBe("fatal: denied");
+    expect(failed.textContent).toContain("git@github.com:org/one.git");
   });
 
   it("reopens the row with what was typed, and the error, when it fails", async () => {

@@ -240,6 +240,95 @@ describe("renderRepositories", () => {
     });
   });
 
+  describe("adds in progress", () => {
+    /** A clone that settles when `finish` is called. */
+    function slowClone() {
+      let finish!: (r: { ok: boolean; error?: string }) => void;
+      let progress!: (p: { percent: number }) => void;
+      const addition = {
+        done: new Promise((r) => (finish = r)),
+        onProgress: (fn: (p: { percent: number }) => void) => {
+          progress = fn;
+          return () => {};
+        },
+        cancel: () => {},
+      };
+      return {
+        addition,
+        finish: (r: { ok: boolean; error?: string }) => finish(r),
+        progress: (n: number) => progress({ percent: n }),
+      };
+    }
+    const addRepo = (container: HTMLElement, url: string) => {
+      container.querySelector<HTMLElement>(".row.add-row[data-new-entry='repo']")!.click();
+      const input = container.querySelector<HTMLInputElement>("input[data-new-entry='repo']")!;
+      typeInto(input, url);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    };
+    const adding = (c: Element) => rows(c, ".row.adding");
+
+    it("shows each clone as its own row and keeps + add repository free for another", async () => {
+      const { container, workspace } = mount();
+      const a = slowClone();
+      const b = slowClone();
+      workspace.addRepository
+        .mockReturnValueOnce(a.addition as never)
+        .mockReturnValueOnce(b.addition as never);
+      addRepo(container, "git@github.com:acme/one.git");
+      expect(
+        adding(container).map((r) => [
+          r.querySelector(".label")?.textContent,
+          r.querySelector(".busy")?.textContent,
+        ]),
+      ).toEqual([["git@github.com:acme/one.git", "Cloning…"]]);
+      a.progress(30);
+      expect(adding(container)[0].textContent).toContain("Cloning 30%");
+      addRepo(container, "git@github.com:acme/two.git");
+      expect(workspace.addRepository).toHaveBeenCalledTimes(2);
+      expect(adding(container)).toHaveLength(2);
+      expect(container.querySelector(".row.add-row[data-new-entry='repo']")).not.toBeNull();
+      a.finish({ ok: true });
+      await flush();
+      expect(adding(container).map((r) => r.textContent)).toEqual([
+        expect.stringContaining("two.git"),
+      ]);
+      b.finish({ ok: true });
+      await flush();
+      expect(adding(container)).toEqual([]);
+    });
+
+    it("keeps a failed clone as its own row while another is being typed", async () => {
+      const { container, workspace, state } = mount();
+      const a = slowClone();
+      workspace.addRepository.mockReturnValueOnce(a.addition as never);
+      addRepo(container, "git@github.com:acme/one.git");
+      container.querySelector<HTMLElement>(".row.add-row[data-new-entry='repo']")!.click();
+      typeInto(
+        container.querySelector<HTMLInputElement>("input[data-new-entry='repo']")!,
+        "git@github.com:acme/half",
+      );
+      a.finish({ ok: false, error: "fatal: denied" });
+      await flush();
+      expect(state().value).toBe("git@github.com:acme/half");
+      const [failed] = adding(container);
+      expect(failed.classList.contains("row--error")).toBe(true);
+      expect(failed.getAttribute("title")).toBe("fatal: denied");
+      expect(failed.querySelector("[data-error]")).not.toBeNull();
+    });
+
+    it("lets a worktree be added while a clone runs", () => {
+      const { container, workspace } = mount();
+      workspace.addRepository.mockReturnValueOnce(slowClone().addition as never);
+      addRepo(container, "git@github.com:acme/one.git");
+      rows(container, ".row.add-row[data-new-entry='worktree']")[0].click();
+      const input = container.querySelector<HTMLInputElement>("input[data-new-entry='worktree']")!;
+      expect(input.disabled).toBe(false);
+      typeInto(input, "feat/y");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(workspace.addWorktree).toHaveBeenCalledWith("github.com/acme/app", "feat/y");
+    });
+  });
+
   it("offers + add worktree under each expanded repo", () => {
     const { container } = mount();
     expect(rows(container, ".row[data-new-entry='worktree']")).toHaveLength(2);
