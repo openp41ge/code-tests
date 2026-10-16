@@ -5,11 +5,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ExtensionHostManager, EXTENSIONS_DIR_NAME } from "@openp41ge/main/services/extension-host-manager";
+import {
+  ExtensionHostManager,
+  EXTENSIONS_DIR_NAME,
+} from "@openp41ge/main/services/extension-host-manager";
 import { ExtensionHost, type ExtensionHostOptions } from "openp41ge-core-extension-host";
 import type { ActiveExtensionSummary } from "openp41ge-core-extension-host";
 import { createNoopLogger } from "openp41ge-core-logger";
-import { registerDispose, registerProcesses } from "openp41ge-sdk";
+import { registerDispose, registerProcesses, registerSearchProvider } from "openp41ge-sdk";
 
 let installDir: string;
 
@@ -48,10 +51,7 @@ interface Setup {
 /** An entry module: what it does when imported (it self-registers). */
 type EntryModule = () => void;
 
-async function setup(
-  modules: Record<string, EntryModule> = {},
-  extra?: string[],
-): Promise<Setup> {
+async function setup(modules: Record<string, EntryModule> = {}, extra?: string[]): Promise<Setup> {
   const stateChanges: ActiveExtensionSummary[][] = [];
   const holder: { value?: { discoveryDirs: string[] } } = {};
 
@@ -126,6 +126,27 @@ describe("ExtensionHostManager", () => {
     expect(s.manager.hasHandler("h/go")).toBe(true);
     await s.manager.dispatch("h/go", { a: 1 });
     expect(received).toEqual({ a: 1 });
+  });
+
+  it("routes palette searches and create actions to an extension's provider", async () => {
+    const s = await setup({
+      h: () =>
+        registerSearchProvider({
+          id: "things",
+          search: (q) => [{ create: "make", title: `make ${q}` }],
+          create: (c, q) => ({ kind: "h/thing", params: { name: q }, title: c }),
+        }),
+    });
+    await s.manager.init();
+    expect(s.manager.searchProviders()).toEqual([{ extensionId: "h", id: "things" }]);
+    expect(await s.manager.search("h", "things", "x")).toEqual({
+      ok: true,
+      items: [{ create: "make", title: "make x" }],
+    });
+    expect(await s.manager.createFromSearch("h", "things", "make", "x")).toEqual({
+      ok: true,
+      item: { kind: "h/thing", params: { name: "x" }, title: "make" },
+    });
   });
 
   it("unloads the previous host's extensions when it reloads", async () => {

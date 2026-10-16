@@ -5,7 +5,14 @@
  * the shared global symbol — the SDK side of the cross-package contract. The
  * host's own tests cover the round trip from the other side.
  */
-import type { ConfigSchema, DragDecls, HandlerFn, SurfaceSpec } from "@openp41ge-sdk";
+import type {
+  ConfigSchema,
+  DragDecls,
+  HandlerFn,
+  OpenKindDef,
+  SearchProvider,
+  SurfaceSpec,
+} from "@openp41ge-sdk";
 
 interface Scope {
   id: string;
@@ -13,6 +20,8 @@ interface Scope {
   processes: Map<string, HandlerFn>;
   renderers: SurfaceSpec[];
   drag: { kinds: unknown[]; sources: unknown[]; consumers: unknown[]; dropTargets: unknown[] };
+  open: { kinds: OpenKindDef[] };
+  searchProviders: SearchProvider[];
   config: ConfigSchema | null;
   disposers: Array<() => void | Promise<void>>;
 }
@@ -30,6 +39,8 @@ export function beginExtensionScope(id: string, version: string): void {
     processes: new Map(),
     renderers: [],
     drag: { kinds: [], sources: [], consumers: [], dropTargets: [] },
+    open: { kinds: [] },
+    searchProviders: [],
     config: null,
     disposers: [],
   };
@@ -66,4 +77,14 @@ export function getScopedConfigSchema(): ConfigSchema | null {
 export function getScopedDisposers(): ReadonlyArray<() => void | Promise<void>> | null {
   const s = current();
   return s ? [...s.disposers] : null;
+}
+
+export function getScopedOpenKinds(): readonly OpenKindDef[] | null {
+  const s = current();
+  return s ? [...s.open.kinds] : null;
+}
+
+export function getScopedSearchProviders(): readonly SearchProvider[] | null {
+  const s = current();
+  return s ? [...s.searchProviders] : null;
 }
