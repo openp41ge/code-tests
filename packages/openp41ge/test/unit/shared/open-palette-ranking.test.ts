@@ -155,17 +155,6 @@ describe("matchFile", () => {
   });
 });
 
-describe("recordPick with the item's details", () => {
-  it("keeps what the item was, to show it again", () => {
-    const h = recordPick(
-      emptyPaletteHistory(),
-      { kind: "k", tabType: "t", item: "k:1", details: { title: "One" } },
-      T0,
-    );
-    expect(h.items["k:1"].details).toEqual({ title: "One" });
-  });
-});
-
 describe("rankScore", () => {
   it("adds remembered use to the match", () => {
     expect(rankScore(10, 0, 0)).toBe(10);

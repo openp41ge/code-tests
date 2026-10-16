@@ -11,7 +11,7 @@ import {
   type OpenPaletteDeps,
 } from "@openp41ge/renderer/components/openp41ge-open-palette";
 import type { PaletteEntry } from "@openp41ge/renderer/services/open-palette/model";
-import { emptyPaletteHistory, recordPick } from "@openp41ge/shared/open-palette-ranking";
+import { emptyPaletteHistory } from "@openp41ge/shared/open-palette-ranking";
 
 const T0 = 1_800_000_000_000;
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -202,14 +202,39 @@ describe("openp41ge-open-palette", () => {
     el.close();
   });
 
-  it("lists what was opened before when nothing is typed", async () => {
-    const history = recordPick(
-      emptyPaletteHistory(),
-      { kind: "openp41ge/file", tabType: "file-viewer", item: "x", details: { ...file("old.ts") } },
-      T0 - 1000,
+  it("asks for a name after New file…, then creates it; Escape goes back", async () => {
+    const target = { root: "/w", label: "app · main" };
+    const ask: PaletteEntry = {
+      type: "create",
+      title: "New file…",
+      ask: { what: "file", target },
+    };
+    const { el, create, gather } = await mount({ gather: async (_q, on) => on([ask]) });
+    expect(rows(el)).toEqual([["New file…", "Create"]]);
+    await key(el, "Enter");
+    expect(el.isConnected).toBe(true);
+    expect(input(el).placeholder).toBe("Name the new file (in app · main)…");
+    expect(rows(el)).toEqual([]);
+    gather.mockClear();
+    await type(el, "src/a.ts");
+    expect(gather).not.toHaveBeenCalled();
+    expect(rows(el)).toEqual([["New file “src/a.ts”", "Create"]]);
+    await key(el, "Escape");
+    expect(el.isConnected).toBe(true);
+    expect(input(el).value).toBe("");
+    expect(rows(el)).toEqual([["New file…", "Create"]]);
+    await key(el, "Enter");
+    await type(el, "b.ts");
+    await key(el, "Enter");
+    expect(create).toHaveBeenCalledWith(
+      {
+        type: "create",
+        title: "New file “b.ts”",
+        description: "in app · main",
+        path: { target: "/w/b.ts", what: "file" },
+      },
+      "b.ts",
     );
-    const { el } = await mount({ history: async () => history, gather: async () => undefined });
-    expect(rows(el)).toEqual([["old.ts", "File viewer"]]);
-    el.close();
+    expect(el.isConnected).toBe(false);
   });
 });

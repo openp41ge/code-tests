@@ -7,8 +7,9 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  entriesFromHistory,
+  askPathEntries,
   entryKey,
+  namedPathEntries,
   pickFor,
   rankEntries,
   type PaletteCatalog,
@@ -150,30 +151,69 @@ describe("rankEntries", () => {
   });
 });
 
-describe("pickFor / entriesFromHistory", () => {
-  it("remembers an item with what it was, and shows it again for an empty query", () => {
-    const entry = chat("c1", "Hello");
-    const pick = pickFor(entry, "ext:agents:chat")!;
-    expect(pick).toMatchObject({ kind: "agents/chat", tabType: "ext:agents:chat" });
-    const history = recordPick(emptyPaletteHistory(), pick, T0);
-    expect(entriesFromHistory(history)).toEqual([entry]);
+describe("pickFor", () => {
+  it("remembers an item under its kind", () => {
+    expect(pickFor(chat("c1", "Hello"), "ext:agents:chat")).toEqual({
+      kind: "agents/chat",
+      tabType: "ext:agents:chat",
+      item: entryKey(chat("c1", "Hello")),
+    });
   });
 
   it("remembers a tab on its own under the empty kind", () => {
-    const pick = pickFor(explorer, "ext:explorer:explorer")!;
-    expect(pick.kind).toBe("");
-    expect(entriesFromHistory(recordPick(emptyPaletteHistory(), pick, T0))).toEqual([explorer]);
+    expect(pickFor(explorer, "ext:explorer:explorer")?.kind).toBe("");
   });
 
   it("does not remember a create row", () => {
     expect(pickFor({ type: "create", title: "New chat" }, "x")).toBeNull();
   });
+});
 
-  it("skips remembered details that are not an entry", () => {
-    const history = {
-      tabTypes: {},
-      items: { junk: { score: 1, at: T0, details: { nope: true } } },
+describe("new file / new folder rows", () => {
+  const target = { root: "/w/app/", label: "app · main" };
+
+  it("asks for a name with nothing typed", () => {
+    expect(askPathEntries(target)).toEqual([
+      {
+        type: "create",
+        title: "New file…",
+        description: "in app · main",
+        ask: { what: "file", target },
+      },
+      {
+        type: "create",
+        title: "New folder…",
+        description: "in app · main",
+        ask: { what: "folder", target },
+      },
+    ]);
+    expect(askPathEntries(null)).toEqual([]);
+  });
+
+  it("names the path under the worktree", () => {
+    expect(namedPathEntries("/src/a.ts", target, ["file"])).toEqual([
+      {
+        type: "create",
+        title: "New file “src/a.ts”",
+        description: "in app · main",
+        path: { target: "/w/app/src/a.ts", what: "file" },
+      },
+    ]);
+  });
+
+  it("offers nothing for an empty name or one leaving the worktree", () => {
+    expect(namedPathEntries("  ", target)).toEqual([]);
+    expect(namedPathEntries("../x", target)).toEqual([]);
+  });
+
+  it("ranks the ask rows last, like the named ones", () => {
+    const [ask] = askPathEntries(target);
+    const newChat: PaletteEntry = {
+      type: "create",
+      title: "New chat",
+      provider: { extensionId: "agents", providerId: "chats", create: "new-chat" },
     };
-    expect(entriesFromHistory(history)).toEqual([]);
+    const ranked = rankEntries([ask, newChat], "", catalog, emptyPaletteHistory(), T0);
+    expect(ranked.map((r) => r.entry)).toEqual([newChat, ask]);
   });
 });
