@@ -146,6 +146,25 @@ describe("openp41ge-open-palette", () => {
     expect(b.onclose).toHaveBeenCalledOnce();
   });
 
+  it("leaves no icon space on a result without an icon", async () => {
+    const { el } = await mount({
+      gather: async (_q, on) =>
+        on([
+          { type: "open", item: { ...(file("a.ts") as { item: never }).item, icon: "★" } },
+          file("b.ts"),
+        ] as PaletteEntry[]),
+    });
+    await type(el, ".ts");
+    const icons = Object.fromEntries(
+      [...el.querySelectorAll(".op-row")].map((r) => [
+        r.querySelector(".op-title")!.textContent,
+        r.querySelector(".op-icon")?.textContent ?? null,
+      ]),
+    );
+    expect(icons).toEqual({ "a.ts": "★", "b.ts": null });
+    el.close();
+  });
+
   it("does not let other shortcuts see its keys", async () => {
     const { el } = await mount();
     const seen = vi.fn();
