@@ -35,6 +35,7 @@ const chat: OpenKindDef = {
 describe("platform open kinds", () => {
   it("are a closed set under openp41ge/", () => {
     expect(PLATFORM_OPEN_KINDS.map((k) => k.name).sort()).toEqual([
+      "openp41ge/command-run",
       "openp41ge/file",
       "openp41ge/log-stream",
       "openp41ge/release",

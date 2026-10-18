@@ -12,7 +12,13 @@ import {
 import { ExtensionHost, type ExtensionHostOptions } from "openp41ge-core-extension-host";
 import type { ActiveExtensionSummary } from "openp41ge-core-extension-host";
 import { createNoopLogger } from "openp41ge-core-logger";
-import { registerDispose, registerProcesses, registerSearchProvider } from "openp41ge-sdk";
+import {
+  registerCommandBinaries,
+  registerConfigSchema,
+  registerDispose,
+  registerProcesses,
+  registerSearchProvider,
+} from "openp41ge-sdk";
 
 let installDir: string;
 
@@ -147,6 +153,30 @@ describe("ExtensionHostManager", () => {
       ok: true,
       item: { kind: "h/thing", params: { name: "x" }, title: "make" },
     });
+  });
+
+  it("lists the extensions' command binaries with their rules", async () => {
+    const s = await setup({
+      g: () => {
+        registerConfigSchema({
+          type: "object",
+          properties: { git: { type: "object", default: { allow: ["log **"] } } },
+        });
+        registerCommandBinaries({ git: { label: "Git", config: "git" } });
+      },
+    });
+    await s.manager.init();
+    expect(s.manager.commandBinaries()).toEqual([
+      { extensionId: "g", binary: "git", label: "Git", rules: { allow: ["log **"], deny: [] } },
+    ]);
+  });
+
+  it("calls an extension official when it was found in an extra (shipped) discovery dir", async () => {
+    const s = await setup({ g: () => {}, h: () => {} }, ["/ext/g"]);
+    await s.manager.init();
+    expect(s.manager.isOfficial("g")).toBe(true);
+    expect(s.manager.isOfficial("h")).toBe(false);
+    expect(s.manager.isOfficial("nope")).toBe(false);
   });
 
   it("unloads the previous host's extensions when it reloads", async () => {

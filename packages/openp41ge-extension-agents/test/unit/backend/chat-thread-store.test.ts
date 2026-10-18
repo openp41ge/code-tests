@@ -289,6 +289,29 @@ describe("ChatThreadStore", () => {
     expect(seg.toolCall!.error).toBe("boom");
   });
 
+  it("updateToolCall propagates the command a call ran into its inline segment", () => {
+    const c = store.create();
+    store.appendMessage(c.id, {
+      id: "a1",
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "tc1", name: "run_command", arguments: "", status: "running" }],
+      segments: [
+        {
+          type: "tool",
+          toolCall: { id: "tc1", name: "run_command", arguments: "", status: "running" },
+        },
+      ],
+    });
+    const run = { binary: "git", args: ["log"], repo: "r", worktree: "main", runId: "r1" };
+    store.updateToolCall(c.id, "tc1", (tc) => {
+      tc.status = "done";
+      tc.run = run;
+    });
+    const seg = store.get(c.id)!.messages[0].segments!.find((s) => s.type === "tool")!;
+    expect(seg.toolCall!.run).toEqual(run);
+  });
+
   it("stores each thread in its own folder under chat-threads/", () => {
     const c = store.create({ title: "T" });
     store.appendMessage(c.id, { id: "u1", role: "user", content: "hello" });

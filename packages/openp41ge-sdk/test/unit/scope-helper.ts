@@ -6,6 +6,7 @@
  * host's own tests cover the round trip from the other side.
  */
 import type {
+  CommandBinaryDef,
   ConfigSchema,
   DragDecls,
   HandlerFn,
@@ -22,6 +23,7 @@ interface Scope {
   drag: { kinds: unknown[]; sources: unknown[]; consumers: unknown[]; dropTargets: unknown[] };
   open: { kinds: OpenKindDef[] };
   searchProviders: SearchProvider[];
+  commands: { binaries: CommandBinaryDef[] };
   config: ConfigSchema | null;
   disposers: Array<() => void | Promise<void>>;
 }
@@ -41,6 +43,7 @@ export function beginExtensionScope(id: string, version: string): void {
     drag: { kinds: [], sources: [], consumers: [], dropTargets: [] },
     open: { kinds: [] },
     searchProviders: [],
+    commands: { binaries: [] },
     config: null,
     disposers: [],
   };
@@ -87,4 +90,9 @@ export function getScopedOpenKinds(): readonly OpenKindDef[] | null {
 export function getScopedSearchProviders(): readonly SearchProvider[] | null {
   const s = current();
   return s ? [...s.searchProviders] : null;
+}
+
+export function getScopedCommandBinaries(): readonly CommandBinaryDef[] | null {
+  const s = current();
+  return s ? [...s.commands.binaries] : null;
 }

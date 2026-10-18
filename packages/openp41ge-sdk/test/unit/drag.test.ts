@@ -74,6 +74,7 @@ describe("vocabulary", () => {
   it("the platform's kinds are a closed set under the openp41ge namespace", () => {
     expect([...PLATFORM_DRAG_KINDS].sort()).toEqual(
       [
+        "openp41ge/command-run",
         "openp41ge/config-overrides",
         "openp41ge/file-path",
         "openp41ge/log-stream",

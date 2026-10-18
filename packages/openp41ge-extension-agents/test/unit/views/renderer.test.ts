@@ -12,7 +12,7 @@ import {
 import { validateDragDeclSurfaces } from "openp41ge-sdk";
 
 describe("renderer entry", () => {
-  it("registers the Agents and Search chats sidebars, the chat tab, and chat drags", async () => {
+  it("registers the Agents and Search chats sidebars, the chat tab, chat drags and command-run drags", async () => {
     beginExtensionScope("openp41ge-extension-agents", "0.1.0");
     try {
       await import("@openp41ge-extension-agents/renderer");
@@ -33,7 +33,10 @@ describe("renderer entry", () => {
       expect(drag.consumers).toMatchObject([
         { accepts: ["openp41ge-extension-agents/chat-thread"] },
       ]);
-      expect(drag.sources).toMatchObject([{ kind: "openp41ge-extension-agents/chat-thread" }]);
+      expect(drag.sources).toMatchObject([
+        { id: "command-run", kind: "openp41ge/command-run" },
+        { kind: "openp41ge-extension-agents/chat-thread" },
+      ]);
       expect(() =>
         validateDragDeclSurfaces(
           drag,

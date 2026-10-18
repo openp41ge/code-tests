@@ -688,4 +688,136 @@ describe("AgentRuntime", () => {
     await scopedRuntime.send(chat.id, "win-a", "hi", undefined, []);
     expect(systemContent).not.toContain("git_log");
   });
+  it("gives run_command the chat's commands, names the binaries in the prompt, and keeps the run on the tool call", async () => {
+    const run = vi.fn(async () => ({
+      ok: true,
+      exitCode: 0,
+      output: "out",
+      truncated: false,
+      runId: "r7",
+    }));
+    const binaries = vi.fn(async () => [
+      {
+        binary: "git",
+        label: "Git",
+        extensionId: "openp41ge-extension-git",
+        allow: ["log **"],
+        deny: ["** --output*"],
+      },
+    ]);
+    ctx.tools.register({
+      name: "run_command",
+      description: "run",
+      parameters: { type: "object", properties: {} },
+      execute: async (_args, toolCtx) => {
+        const r = await toolCtx.commands!.run({
+          binary: "git",
+          args: ["log"],
+          repo: "github.com/org/repo",
+          worktree: "main",
+        });
+        return {
+          content: r.output,
+          run: {
+            binary: "git",
+            args: ["log"],
+            repo: "github.com/org/repo",
+            worktree: "main",
+            runId: r.runId,
+          },
+        };
+      },
+    });
+    const systems: string[] = [];
+    let call = 0;
+    const script: ProviderDelta[][] = [
+      [{ type: "tool_call", id: "c1", name: "run_command", arguments: "{}" }],
+      [{ type: "text", text: "done" }],
+    ];
+    ctx.providers.register({
+      id: "fake",
+      label: "Fake",
+      create: () => ({
+        id: "fake",
+        label: "Fake",
+        ping: async () => true,
+        async *streamChat(req: ChatStreamRequest): AsyncIterable<ProviderDelta> {
+          systems.push(req.messages[0]?.content ?? "");
+          for (const d of script[Math.min(call++, script.length - 1)]) yield d;
+        },
+      }),
+    });
+    const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
+      getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
+      getConnectedRepositories: async () => [
+        {
+          repo: "github.com/org/repo",
+          cloned: true,
+          worktrees: [{ branch: "main", path: "/w/main" }],
+        },
+      ],
+      commands: { binaries, run },
+    });
+    const chat = ctx.store.create("ws", { providerId: "fake" });
+    await scopedRuntime.send(chat.id, "win-a", "show the log");
+
+    expect(run).toHaveBeenCalledWith(chat.id, {
+      binary: "git",
+      args: ["log"],
+      repo: "github.com/org/repo",
+      worktree: "main",
+    });
+    expect(binaries).toHaveBeenCalledWith(chat.id);
+    expect(systems[0]).toContain("run_command");
+    expect(systems[0]).toContain("- git: allow `log **`; deny `** --output*`");
+    const tool = ctx.store
+      .get(chat.id)!
+      .messages.flatMap((m) => m.toolCalls ?? [])
+      .find((t) => t.id === "c1")!;
+    expect(tool.run).toEqual({
+      binary: "git",
+      args: ["log"],
+      repo: "github.com/org/repo",
+      worktree: "main",
+      runId: "r7",
+    });
+    const sent = ctx.hooks.sendToWindow.mock.calls.find(([, e]) => e === "chat:tool");
+    expect((sent![2] as { toolCall: { run?: unknown } }).toolCall.run).toEqual(tool.run);
+  });
+
+  it("does not name the binaries when run_command is not enabled", async () => {
+    let systemContent = "";
+    ctx.providers.register({
+      id: "fake",
+      label: "Fake",
+      create: () => ({
+        id: "fake",
+        label: "Fake",
+        ping: async () => true,
+        async *streamChat(req: ChatStreamRequest): AsyncIterable<ProviderDelta> {
+          systemContent = req.messages[0]?.content ?? "";
+          yield { type: "text", text: "hi" };
+        },
+      }),
+    });
+    const binaries = vi.fn(async () => []);
+    const scopedRuntime = new AgentRuntime(ctx.store, ctx.providers, ctx.tools, ctx.hooks, {
+      getProviderConfig: () => ({ baseUrl: "http://x", defaultModel: "m", temperature: 0.2 }),
+      getConnectedRepositories: async () => [
+        {
+          repo: "github.com/org/repo",
+          cloned: true,
+          worktrees: [{ branch: "main", path: "/w/main" }],
+        },
+      ],
+      commands: {
+        binaries,
+        run: async () => ({ ok: true, exitCode: 0, output: "", truncated: false, runId: "" }),
+      },
+    });
+    const chat = ctx.store.create("ws", { providerId: "fake" });
+    await scopedRuntime.send(chat.id, "win-a", "hi", undefined, []);
+    expect(systemContent).not.toContain("run_command");
+    expect(binaries).not.toHaveBeenCalled();
+  });
 });

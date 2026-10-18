@@ -55,3 +55,26 @@ describe("translateGridOpen — config-editor", () => {
     expect(translateGridOpen("config-editor", {}, label)).toBeNull();
   });
 });
+
+describe("translateGridOpen — terminal", () => {
+  it("opens one terminal per binary and worktree, marking a run", () => {
+    expect(
+      translateGridOpen(
+        "terminal",
+        { binary: "git", repo: "github.com/a/app", worktree: "main", runId: "r1" },
+        label,
+      ),
+    ).toEqual({
+      title: "git · main",
+      filePath: "terminal:git:github.com/a/app@main",
+      config: {
+        binary: "git",
+        repo: "github.com/a/app",
+        worktree: "main",
+        path: "terminal:git:github.com/a/app@main",
+        runId: "r1",
+      },
+    });
+    expect(translateGridOpen("terminal", { binary: "git", repo: "r" }, label)).toBeNull();
+  });
+});

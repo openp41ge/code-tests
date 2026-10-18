@@ -12,7 +12,7 @@ import { ToolRegistry } from "@openp41ge-extension-agents/backend/tool-registry"
 import { registerBuiltinTools } from "@openp41ge-extension-agents/tools/index";
 
 describe("registerBuiltinTools", () => {
-  it("registers the file tools, create_worktree and the read-only git tools (run_command disabled)", () => {
+  it("registers the file tools, create_worktree, the read-only git tools and run_command", () => {
     const registry = new ToolRegistry();
     registerBuiltinTools(registry);
     const names = registry
@@ -29,6 +29,7 @@ describe("registerBuiltinTools", () => {
       "git_log",
       "git_show",
       "read_file",
+      "run_command",
       "search_files",
     ]);
   });
@@ -42,11 +43,5 @@ describe("registerBuiltinTools", () => {
       expect(tool.parameters.type).toBe("object");
       expect(typeof tool.execute).toBe("function");
     }
-  });
-
-  it("does not register any shell/command tool", () => {
-    const registry = new ToolRegistry();
-    registerBuiltinTools(registry);
-    expect(registry.has("run_command")).toBe(false);
   });
 });

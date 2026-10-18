@@ -145,7 +145,7 @@ describe("Command dispatch — OperationDispatcher", () => {
     });
   });
 
-  describe("Save handler and terminal cleanup callbacks", () => {
+  describe("Save handler", () => {
     it("invokes save handler after every successful apply", () => {
       const dispatcher = new OperationDispatcher();
       const ws = dispatcher.getWorkspace();
@@ -196,26 +196,6 @@ describe("Command dispatch — OperationDispatcher", () => {
 
       dispatcher.apply("nonExistentOperation", []);
       expect(saveHandler).not.toHaveBeenCalled();
-    });
-
-    it("calls terminal cleanup when removing via removeColumnTab", () => {
-      const dispatcher = new OperationDispatcher();
-      const ws = dispatcher.getWorkspace();
-      const winId = ws.windows[0].id;
-      const cleanup = vi.fn();
-
-      dispatcher.setTerminalCleanup(cleanup);
-
-      dispatcher.apply("addTabToCell", [
-        winId,
-        { id: "t1", appType: "terminal", title: "T1", config: {}, isPreview: false },
-        0,
-        0,
-      ]);
-
-      // removeColumnTab triggers terminal cleanup (by design)
-      dispatcher.apply("removeColumnTab", [winId, "t1"]);
-      expect(cleanup).toHaveBeenCalledWith("t1");
     });
   });
 

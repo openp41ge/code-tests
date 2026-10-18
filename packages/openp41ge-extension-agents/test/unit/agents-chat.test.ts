@@ -2356,3 +2356,52 @@ describe("AgentsChat paged transcript", () => {
     );
   });
 });
+
+describe("a tool call that ran a command", () => {
+  it("is a drag source of the run (openp41ge/command-run), so it opens in a terminal", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const run = {
+      binary: "git",
+      args: ["log", "-1"],
+      repo: "github.com/a/app",
+      worktree: "main",
+      runId: "r7",
+    };
+    const call = { id: "tc1", name: "run_command", arguments: "{}", status: "done" as const, run };
+    const plain = { id: "tc2", name: "read_file", arguments: "{}", status: "done" as const };
+    el.setChat({
+      id: "chat_1",
+      title: "Hello",
+      providerId: "vllm",
+      createdAt: 0,
+      updatedAt: 0,
+      messages: [
+        {
+          id: "m2",
+          role: "assistant",
+          content: "",
+          toolCalls: [call, plain],
+          segments: [
+            { type: "tool", toolCall: call },
+            { type: "tool", toolCall: plain },
+          ],
+          timestamp: 2,
+        },
+      ],
+    });
+    await el.updateComplete;
+    const [ran, other] = [...el.shadowRoot!.querySelectorAll<HTMLElement>(".tool-call-row")];
+    expect(ran.getAttribute("data-drag-source-id")).toBe("command-run");
+    expect(ran.dataset).toMatchObject({
+      runBinary: "git",
+      runRepo: "github.com/a/app",
+      runWorktree: "main",
+      runArgs: '["log","-1"]',
+      runId: "r7",
+    });
+    expect(other.hasAttribute("data-drag-source-id")).toBe(false);
+    el.remove();
+  });
+});

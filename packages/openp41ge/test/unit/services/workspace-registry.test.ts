@@ -4,7 +4,7 @@ import { createWorkspace } from "../../../src/layout/types";
 
 describe("WorkspaceRegistry", () => {
   it("creates an independent dispatcher per workspace path", () => {
-    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save: vi.fn(), terminalCleanup: vi.fn() });
+    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save: vi.fn() });
 
     const a = registry.getOrCreate("/a");
     const b = registry.getOrCreate("/b");
@@ -17,7 +17,7 @@ describe("WorkspaceRegistry", () => {
   });
 
   it("returns the same dispatcher for the same path (lazy create)", () => {
-    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save: vi.fn(), terminalCleanup: vi.fn() });
+    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save: vi.fn() });
     expect(registry.get("/x")).toBeNull();
     expect(registry.has("/x")).toBe(false);
     const d = registry.getOrCreate("/x");
@@ -28,7 +28,7 @@ describe("WorkspaceRegistry", () => {
 
   it("forwards broadcast to the owning path", () => {
     const broadcast = vi.fn();
-    const registry = new WorkspaceRegistry({ broadcast, save: vi.fn(), terminalCleanup: vi.fn() });
+    const registry = new WorkspaceRegistry({ broadcast, save: vi.fn() });
     const d = registry.getOrCreate("/a");
     d.apply("addWindow", ["w2"]);
     d.broadcast();
@@ -37,24 +37,15 @@ describe("WorkspaceRegistry", () => {
 
   it("forwards save with the owning path after a mutation", () => {
     const save = vi.fn();
-    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save, terminalCleanup: vi.fn() });
+    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save });
     const d = registry.getOrCreate("/a");
     d.apply("addWindow", ["w2"]);
     expect(save).toHaveBeenCalledWith("/a", d.getWorkspace());
   });
 
-  it("wires terminal cleanup into created dispatchers", () => {
-    const terminalCleanup = vi.fn();
-    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save: vi.fn(), terminalCleanup });
-    expect(() => registry.getOrCreate("/a")).not.toThrow();
-    // Reuse an existing path never rewires callbacks out from under the caller.
-    registry.getOrCreate("/a");
-    expect(terminalCleanup).not.toHaveBeenCalled();
-  });
-
   it("persistAll saves every open workspace to its own file, with its own layout", () => {
     const save = vi.fn();
-    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save, terminalCleanup: vi.fn() });
+    const registry = new WorkspaceRegistry({ broadcast: vi.fn(), save });
     const a = registry.getOrCreate("/a");
     const b = registry.getOrCreate("/b");
     a.apply("addWindow", ["w2"]);

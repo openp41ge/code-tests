@@ -189,6 +189,19 @@ describe("PLATFORM_DRAG_CONSUMERS", () => {
       appType: "config-editor",
       tabConfig: { extensionId: "my-ext" },
     });
+    expect(
+      open({
+        kind: "openp41ge/command-run",
+        binary: "git",
+        repo: "github.com/a/app",
+        worktree: "main",
+        args: '["log"]',
+        runId: "r1",
+      }),
+    ).toMatchObject({
+      appType: "terminal",
+      tabConfig: { binary: "git", repo: "github.com/a/app", worktree: "main", runId: "r1" },
+    });
   });
 
   it("leaves repositories, commits and chats to their extensions (their tabs open them)", () => {
