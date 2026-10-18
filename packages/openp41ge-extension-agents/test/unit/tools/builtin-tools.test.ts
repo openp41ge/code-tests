@@ -12,7 +12,7 @@ import { ToolRegistry } from "@openp41ge-extension-agents/backend/tool-registry"
 import { registerBuiltinTools } from "@openp41ge-extension-agents/tools/index";
 
 describe("registerBuiltinTools", () => {
-  it("registers the file tools, create_worktree, the read-only git tools and run_command", () => {
+  it("registers the file tools, create_worktree and run_command (git runs through run_command)", () => {
     const registry = new ToolRegistry();
     registerBuiltinTools(registry);
     const names = registry
@@ -23,11 +23,6 @@ describe("registerBuiltinTools", () => {
       "create_or_replace_file",
       "create_worktree",
       "edit_file",
-      "git_blame",
-      "git_branches",
-      "git_diff",
-      "git_log",
-      "git_show",
       "read_file",
       "run_command",
       "search_files",

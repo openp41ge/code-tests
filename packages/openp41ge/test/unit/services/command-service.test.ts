@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   CommandService,
   COMMAND_ENV,
+  PROMPT_RUNNER,
   type CommandProcess,
   type CommandProcessOptions,
   type CommandProcessResult,
@@ -93,7 +94,11 @@ beforeEach(() => {
     binaries: () => binaries,
     chosen: () => chosen,
     isOfficial: (id) => official.has(id),
-    limits: () => ({ timeoutMs: 60_000, maxOutputBytes: 256 * 1024 }),
+    limits: () => ({
+      timeoutMs: 60_000,
+      maxOutputBytes: 256 * 1024,
+      agentMaxOutputBytes: 32 * 1024,
+    }),
     process: proc,
     store,
     onRun: (workspaceId, run) => events.push({ workspaceId, run }),
@@ -171,7 +176,7 @@ describe("CommandService.run", () => {
       LESSSECURE: "1",
     });
     expect(opts.timeoutMs).toBe(60_000);
-    expect(opts.maxOutputBytes).toBe(256 * 1024);
+    expect(opts.maxOutputBytes).toBe(32 * 1024);
     expect(store.list("ws1")).toEqual([
       expect.objectContaining({
         runId: "r1",
@@ -235,6 +240,12 @@ describe("CommandService.run", () => {
 
     proc.next = { exitCode: null, notFound: true, chunks: [] };
     expect((await service.run(scope, req(["log"]), "you")).error).toMatch(/git.*not found/);
+  });
+
+  it("caps what a run prints at the prompt's cap for you, and the smaller agent cap for others", async () => {
+    await service.run(scope, req(["log"]), PROMPT_RUNNER);
+    await service.run(scope, req(["log"]), "openp41ge-extension-agents");
+    expect(proc.calls.map((c) => c.opts.maxOutputBytes)).toEqual([256 * 1024, 32 * 1024]);
   });
 
   it("passes on a cut output", async () => {
