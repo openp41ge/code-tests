@@ -1,9 +1,12 @@
 /**
  * The git extension defines the `git` binary for the platform's scoped
  * terminal; its allow / deny rules live in the extension's config
- * (`commands.git`). The defaults allow reading only: status, log, show, diff,
- * blame and listing branches — not writing, not options before the
- * subcommand, not diff's `--output` or external diff programs.
+ * (`commands.git`). The defaults allow reading (status, log, show, diff,
+ * blame, listing branches) and syncing: fetch, pull, resolving a merge or
+ * rebase that stopped on a conflict (add, commit, continue / abort / skip)
+ * and push — not other writes (reset, checkout, stash, branches, starting a
+ * merge or rebase), not options before the subcommand, not diff's
+ * `--output` or external diff programs.
  */
 import { describe, it, expect } from "vitest";
 import { checkCommand, commandRulesAt, configDefaults, validateConfigSchema } from "openp41ge-sdk";
@@ -34,10 +37,36 @@ describe("git's command config", () => {
     }
   });
 
-  it("refuses writing, options before the subcommand, and programs git would run", () => {
+  it("allows pulling, resolving a conflict, committing and pushing", () => {
     for (const line of [
-      "push",
+      "fetch",
+      "fetch origin",
+      "pull",
+      "pull --rebase origin main",
+      "add a.ts b.ts",
       "commit -m x",
+      "commit --no-edit",
+      "merge --continue",
+      "merge --abort",
+      "rebase --continue",
+      "rebase --abort",
+      "rebase --skip",
+      "push",
+      "push origin main",
+    ]) {
+      expect(allowed(line), line).toBe(true);
+    }
+  });
+
+  it("refuses other writes, options before the subcommand, and programs git would run", () => {
+    for (const line of [
+      "reset --hard HEAD~1",
+      "checkout main",
+      "switch -c x",
+      "stash",
+      "merge feature",
+      "rebase main",
+      "rebase --continue extra",
       "branch -D main",
       "branch new",
       "-c core.pager=sh log",

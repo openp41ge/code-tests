@@ -184,6 +184,37 @@ describe("AgentsChat (custom element)", () => {
     expect(msgEls[0].querySelector(".msg-content strong")).not.toBeNull();
   });
 
+  it("heads a user message with USER and a response with AGENT, once per run of responses", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello");
+    el.addMessage("assistant", "Hi");
+    el.addMessage("assistant", "And more");
+    el.addMessage("user", "Thanks");
+    el.addMessage("assistant", "Welcome");
+    await el.updateComplete;
+
+    const labels = [...el.shadowRoot!.querySelectorAll(".chat-message")].map(
+      (m) =>
+        [...m.children].find((c) => c.classList.contains("msg-role"))?.getAttribute("data-label") ??
+        null,
+    );
+    expect(labels).toEqual(["User", "Agent", null, "User", "Agent"]);
+  });
+
+  it("draws the role label without text, so it is not searched, selected or copied", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+
+    el.addMessage("user", "Hello");
+    await el.updateComplete;
+
+    const msg = el.shadowRoot!.querySelector(".chat-message.user")!;
+    expect(msg.querySelector(".msg-role")!.textContent).toBe("");
+    expect(msg.textContent!.trim()).toBe("Hello");
+  });
+
   it("adds multiple messages", async () => {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);
@@ -582,10 +613,14 @@ describe("AgentsChat (custom element)", () => {
     scroller.dispatchEvent(new Event("scroll"));
     expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(true);
 
-    // Slowly scroll up just a couple of pixels — well within the "near bottom"
-    // band. Pinning must yield immediately, or the stream re-pins us here.
+    // Drag the scrollbar up just a couple of pixels — well within the "near
+    // bottom" band. Pinning must yield immediately, or the stream re-pins us.
+    const bar = document.createElement("div");
+    scroller.parentElement!.appendChild(bar);
+    bar.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     top = 1598;
     scroller.dispatchEvent(new Event("scroll"));
+    window.dispatchEvent(new PointerEvent("pointerup"));
     expect((el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom).toBe(false);
 
     // Stream new content: the viewport must NOT be yanked back to the bottom.
@@ -636,6 +671,67 @@ describe("AgentsChat (custom element)", () => {
     await el.updateComplete;
     await new Promise((r) => setTimeout(r, 25));
     expect(scroller.scrollTop).toBe(1600);
+  });
+
+  /** A chat whose scroller reports a 2000px transcript in a 400px viewport,
+   *  at the bottom; `geo` changes the reported layout. */
+  async function pinnedChat() {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const scroller = el.renderRoot.querySelector<HTMLElement>(".chat-messages")!;
+    const geo = { top: 1600, height: 2000, client: 400 };
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, get: () => geo.height });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, get: () => geo.client });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => geo.top,
+      set: (v: number) => {
+        geo.top = Math.max(0, Math.min(v, geo.height - geo.client));
+      },
+    });
+    scroller.dispatchEvent(new Event("scroll"));
+    const pinned = () => (el as unknown as { _pinnedToBottom: boolean })._pinnedToBottom;
+    expect(pinned()).toBe(true);
+    return { el, scroller, geo, pinned };
+  }
+
+  it("stays pinned when the transcript shrinks under it (the scroll position is clamped)", async () => {
+    const { scroller, geo, pinned } = await pinnedChat();
+    geo.height = 1900;
+    geo.top = 1500;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(pinned()).toBe(true);
+  });
+
+  it("stays pinned, back at the bottom, when the position moves up without the user", async () => {
+    const { el, scroller, geo, pinned } = await pinnedChat();
+    // The viewport grew (the composer shrank) or a re-render moved content.
+    geo.top = 1400;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(pinned()).toBe(true);
+    expect(geo.top).toBe(1600);
+    geo.height = 2200;
+    el.appendDelta("More.");
+    await el.updateComplete;
+    await new Promise((r) => setTimeout(r, 25));
+    expect(geo.top).toBe(1800);
+  });
+
+  it("unpins when the user scrolls up with the keyboard", async () => {
+    const { scroller, geo, pinned } = await pinnedChat();
+    scroller.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", bubbles: true }));
+    geo.top = 1250;
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(pinned()).toBe(false);
+  });
+
+  it("stays pinned on a wheel-up when there is nothing above to scroll to", async () => {
+    const { scroller, geo, pinned } = await pinnedChat();
+    geo.height = 300;
+    geo.top = 0;
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -10 }));
+    expect(pinned()).toBe(true);
   });
 
   it("appendReasoning stores reasoning and renders a collapsible Reasoning block", async () => {
