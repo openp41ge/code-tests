@@ -411,10 +411,15 @@ describe("AgentRuntime", () => {
     // The scope is the chat's own (its workspace's worktrees), read again
     // for each request to the provider (a tool may check one out).
     expect(scopedFor).toEqual([chat.id, chat.id]);
-    // The tool receives every connected-worktree path as its scope roots.
+    // The tool receives every connected-worktree path as its scope roots,
+    // and each worktree's repo and branch.
     expect(capturedCtx).toEqual({
       cwd: undefined,
       roots: ["/worktrees/main", "/worktrees/feature-x"],
+      worktrees: [
+        { repo: "github.com/org/repo", branch: "main", path: "/worktrees/main" },
+        { repo: "github.com/org/repo", branch: "feature-x", path: "/worktrees/feature-x" },
+      ],
     });
   });
 
@@ -536,7 +541,7 @@ describe("AgentRuntime", () => {
       repos.find((r) => r.repo === repo)!.worktrees.push({ branch, path });
       return { ok: true, path };
     });
-    const seen: Array<{ roots?: string[] }> = [];
+    const seen: Array<{ roots?: string[]; worktrees?: unknown }> = [];
     ctx.tools.register({
       name: "create_worktree",
       description: "check out",
@@ -551,7 +556,7 @@ describe("AgentRuntime", () => {
       description: "read",
       parameters: { type: "object", properties: {} },
       execute: async (_args, toolCtx) => {
-        seen.push({ roots: toolCtx.roots });
+        seen.push({ roots: toolCtx.roots, worktrees: toolCtx.worktrees });
         return { content: "x" };
       },
     });
@@ -596,7 +601,12 @@ describe("AgentRuntime", () => {
     await scopedRuntime.send(chat.id, "win-a", "work on dev");
 
     expect(addWorktree).toHaveBeenCalledWith(chat.id, "github.com/org/bare", "dev");
-    expect(seen).toEqual([{ roots: ["/worktrees/dev"] }]);
+    expect(seen).toEqual([
+      {
+        roots: ["/worktrees/dev"],
+        worktrees: [{ repo: "github.com/org/bare", branch: "dev", path: "/worktrees/dev" }],
+      },
+    ]);
     expect(systems[0]).toContain("no worktree checked out");
     expect(systems[0]).toContain("create_worktree");
     expect(systems[1]).toContain("    - branch dev: /worktrees/dev");

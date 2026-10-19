@@ -47,8 +47,8 @@ describe("search_files scope enforcement", () => {
   it("searches every connected worktree by default", async () => {
     const res = await search({ query: "ts" }, { cwd: rootA, roots: [rootA, rootB] });
     expect(res.error).toBeUndefined();
-    expect(res.content).toContain(fileA);
-    expect(res.content).toContain(fileB);
+    expect(res.content).toContain(`# ${rootA}\nsrc/alpha.ts`);
+    expect(res.content).toContain(`# ${rootB}\nsrc/beta.ts`);
   });
 
   it("searches a specific worktree / group when roots are requested", async () => {
@@ -57,8 +57,8 @@ describe("search_files scope enforcement", () => {
       { cwd: rootA, roots: [rootA, rootB] },
     );
     expect(res.error).toBeUndefined();
-    expect(res.content).toContain(fileA);
-    expect(res.content).not.toContain(fileB);
+    expect(res.content).toContain(`# ${rootA}\nsrc/alpha.ts`);
+    expect(res.content).not.toContain(rootB);
   });
 
   it("rejects a requested root outside the connected worktrees", async () => {
@@ -82,7 +82,7 @@ describe("search_files scope enforcement", () => {
   it("is unrestricted when no scope is provided (legacy)", async () => {
     const res = await search({ query: "alpha", roots: [rootA] }, { cwd: rootA });
     expect(res.error).toBeUndefined();
-    expect(res.content).toContain(fileA);
+    expect(res.content).toContain(`# ${rootA}\nsrc/alpha.ts`);
   });
 
   it("resolves relative roots against cwd and applies the scope", async () => {
@@ -91,6 +91,6 @@ describe("search_files scope enforcement", () => {
       { cwd: rootA, roots: [rootA, rootB] },
     );
     expect(res.error).toBeUndefined();
-    expect(res.content).toContain(fileB);
+    expect(res.content).toContain(`# ${rootB}\nsrc/beta.ts`);
   });
 });

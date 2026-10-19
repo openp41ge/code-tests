@@ -43,13 +43,13 @@ describe("read_file scope enforcement", () => {
   it("reads a file inside a root", async () => {
     const res = await read(fileA, { cwd: rootA, roots: [rootA] });
     expect(res.error).toBeUndefined();
-    expect(res.content).toBe("alpha");
+    expect(res.content).toContain("1\talpha");
   });
 
   it("reads a file inside ANY of the connected roots", async () => {
     const res = await read(fileB, { cwd: rootA, roots: [rootA, rootB] });
     expect(res.error).toBeUndefined();
-    expect(res.content).toBe("beta");
+    expect(res.content).toContain("1\tbeta");
   });
 
   it("denies a file outside every root", async () => {
@@ -86,13 +86,13 @@ describe("read_file scope enforcement", () => {
   it("is unrestricted when no roots are provided (legacy)", async () => {
     const res = await read(fileA, { cwd: rootA });
     expect(res.error).toBeUndefined();
-    expect(res.content).toBe("alpha");
+    expect(res.content).toContain("1\talpha");
   });
 
   it("resolves cwd-relative paths and applies the scope", async () => {
     const res = await read("file.ts", { cwd: rootA, roots: [rootA] });
     expect(res.error).toBeUndefined();
-    expect(res.content).toBe("alpha");
+    expect(res.content).toContain("1\talpha");
 
     const denied = await read("../file.ts", { cwd: rootB, roots: [rootB] });
     expect(denied.error).toContain("outside the connected worktrees");
