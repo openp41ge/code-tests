@@ -2312,6 +2312,23 @@ describe("AgentsChat (custom element)", () => {
     );
   });
 
+  it("lets the transcript's text be selected, with a text cursor, but not its controls", async () => {
+    const el = document.createElement("agents-chat") as unknown as AgentsChat;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    // jsdom doesn't apply shadow-DOM styles to getComputedStyle, so assert the
+    // stylesheet: the app turns selection off, the transcript turns it back on.
+    const css = el.shadowRoot!.querySelector("style")?.textContent ?? "";
+    const rule = (selector: RegExp) => css.match(selector)?.[1] ?? "";
+    const transcript = rule(/\n\s*\.chat-messages \{([^}]*)\}/);
+    expect(transcript).toMatch(/user-select: text/);
+    expect(transcript).toMatch(/cursor: text/);
+    const controls = rule(/\.chat-messages :is\(([^)]*)\)\s*\{[^}]*user-select: none/);
+    for (const control of ["button", "summary", ".code-block-toolbar"]) {
+      expect(controls).toContain(control);
+    }
+  });
+
   it("drops the blinking caret when the composer loses focus but keeps the highlight", async () => {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);
