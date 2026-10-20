@@ -44,6 +44,7 @@ function host(params: Record<string, unknown> = { chatId: "c1" }): ChatPaneHost 
     },
     log: { debug() {}, info() {}, warn() {}, error: vi.fn() },
     openLog: vi.fn(),
+    pin: vi.fn(),
   };
 }
 
@@ -158,6 +159,15 @@ describe("ChatPane", () => {
     expect(h.openLog).toHaveBeenCalledWith("e-1");
   });
 
+  it("pins its tab the first time the user works in the chat", () => {
+    const h = host();
+    const pane = new ChatPane(h, element());
+    pane.start();
+    pane.engaged();
+    pane.engaged();
+    expect(h.pin).toHaveBeenCalledTimes(1);
+  });
+
   it("gives the composer the configured providers and the enabled tools", async () => {
     const el = element();
     new ChatPane(host(), el).start();
@@ -198,6 +208,25 @@ describe("ChatPane", () => {
       payload: { id: "c1", text: "hello", cwd: "/w", tools: [], thinkingLevel: "High" },
     });
     expect(calls).toContainEqual({ command: "abort", payload: { id: "c1" } });
+  });
+
+  it("sends a thinking level of request fields as it is", async () => {
+    const el = element();
+    const pane = new ChatPane(host({ chatId: "c1", cwd: "/w" }), el);
+    pane.start();
+    await flush();
+    pane.toolsChanged([]);
+    pane.send("hello", { chat_template_kwargs: { thinking: false } });
+    expect(calls).toContainEqual({
+      command: "send",
+      payload: {
+        id: "c1",
+        text: "hello",
+        cwd: "/w",
+        tools: [],
+        thinkingLevel: { chat_template_kwargs: { thinking: false } },
+      },
+    });
   });
 
   it("updates the title when the chat is renamed", async () => {

@@ -1360,11 +1360,12 @@ describe("AgentsChat (custom element)", () => {
     expect(sendBtn.getAttribute("title")).toBe("Type a message to send");
   });
 
-  it("setComposerContext populates providers and active tools", async () => {
+  /** A chat with two providers (vLLM with two models, one with thinking
+   *  entries) and three tools, two of them on. */
+  async function chatWithContext(): Promise<AgentsChat> {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);
     await el.updateComplete;
-
     el.setComposerContext({
       providers: [
         {
@@ -1372,168 +1373,195 @@ describe("AgentsChat (custom element)", () => {
           label: "vLLM",
           defaultModel: "vicuna-13b",
           baseUrl: "http://localhost:8000/v1",
-          models: [{ id: "vicuna-13b" }, { id: "llama-2", contextWindow: 128000 }],
+          models: [
+            { id: "vicuna-13b" },
+            { id: "qwen-25", thinking: { Light: "low", Deep: "high" }, contextWindow: 128000 },
+          ],
         },
+        { id: "openai", label: "OpenAI", defaultModel: "gpt-4" },
+      ],
+      activeProviderId: "vllm",
+      activeModelId: "vicuna-13b",
+      availableTools: [
+        { name: "read_file", description: "Read a file." },
+        { name: "search_files", description: "Search files." },
+        { name: "run_command", description: "Run a command." },
       ],
       activeTools: ["read_file", "run_command"],
     });
     await el.updateComplete;
+    return el;
+  }
 
-    const providerBtn = el.shadowRoot!.querySelector(".composer-select") as HTMLButtonElement;
-    const modelBtn = el.shadowRoot!.querySelector(
-      ".composer-select.composer-model-select",
-    ) as HTMLButtonElement;
-    expect(providerBtn.querySelector(".composer-select-label")?.textContent).toContain("vLLM");
-    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("vicuna-13b");
-
-    // Clicking the provider selector opens a provider list over the text area.
-    providerBtn.click();
+  const q = (el: AgentsChat, sel: string) => el.shadowRoot!.querySelector<HTMLElement>(sel);
+  const qa = (el: AgentsChat, sel: string) => [
+    ...el.shadowRoot!.querySelectorAll<HTMLElement>(sel),
+  ];
+  const settings = (el: AgentsChat) => q(el, ".chat-scroll .chat-settings");
+  const section = (el: AgentsChat, name: string) =>
+    qa(el, ".chat-settings .cs-section").find(
+      (s) => s.querySelector(".cs-heading")?.textContent?.trim() === name,
+    );
+  async function openSettings(el: AgentsChat): Promise<void> {
+    q(el, ".composer-more")!.click();
     await el.updateComplete;
-    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
-    expect(items).toHaveLength(1);
-    // Two-row layout: name on the first row, base URL + model count on the second.
+  }
+
+  it("the bar holds the token counts, the model name, ＋ and ⋯, then send", async () => {
+    const el = await chatWithContext();
+    el.setUsage({ promptTokens: 1_200, completionTokens: 34, totalTokens: 1_234 });
+    await el.updateComplete;
+    const bar = q(el, ".composer-toolbar")!;
+    const order = [...bar.children].map(
+      (c) =>
+        [
+          "composer-tokenrow",
+          "composer-model-label",
+          "composer-add",
+          "composer-more",
+          "composer-spacer",
+          "composer-send",
+        ].find((k) => c.classList.contains(k)) ?? c.className,
+    );
+    expect(order).toEqual([
+      "composer-tokenrow",
+      "composer-model-label",
+      "composer-add",
+      "composer-more",
+      "composer-spacer",
+      "composer-send",
+    ]);
+    // The provider / model / thinking / tools pickers are gone from the bar.
+    expect(bar.querySelector(".composer-select")).toBeNull();
+    // The provider and model are shown, not clickable.
+    const label = q(el, ".composer-model-label")!;
+    expect(label.tagName).toBe("SPAN");
+    expect(label.textContent!.trim()).toBe("vLLM / vicuna-13b");
+    // No settings overlay until ⋯ is pressed.
+    expect(settings(el)).toBeNull();
+  });
+
+  it("⋯ opens the settings over the chat, which stays rendered underneath", async () => {
+    const el = await chatWithContext();
+    el.addMessage("user", "Hello");
+    await el.updateComplete;
+
+    await openSettings(el);
+    expect(settings(el)).not.toBeNull();
+    expect(q(el, ".composer-more")!.classList.contains("active")).toBe(true);
+    // The transcript is still there, only covered.
+    expect(qa(el, ".chat-messages .chat-message")).toHaveLength(1);
+    // One page of sections; the model has no thinking entries, so no
+    // Reasoning effort section.
+    expect(qa(el, ".chat-settings .cs-heading").map((h) => h.textContent!.trim())).toEqual([
+      "Provider",
+      "Model",
+      "Tools",
+    ]);
+
+    // ⋯ again closes it.
+    await openSettings(el);
+    expect(settings(el)).toBeNull();
+  });
+
+  it("closes the settings with their close button or Escape", async () => {
+    const el = await chatWithContext();
+    await openSettings(el);
+    q(el, ".chat-settings .cs-close")!.click();
+    await el.updateComplete;
+    expect(settings(el)).toBeNull();
+
+    await openSettings(el);
+    settings(el)!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await el.updateComplete;
+    expect(settings(el)).toBeNull();
+  });
+
+  it("picks a provider in the settings, which stay open", async () => {
+    const el = await chatWithContext();
+    await openSettings(el);
+    const items = [...section(el, "Provider")!.querySelectorAll<HTMLElement>(".provider-item")];
+    expect(items).toHaveLength(2);
+    // Two rows: the name, then the base URL and the model count.
     expect(items[0].querySelector(".row-name")?.textContent).toContain("vLLM");
     expect(items[0].querySelector(".row-sub")?.textContent).toContain("http://localhost:8000/v1");
     expect(items[0].querySelector(".row-sub")?.textContent).toContain("2 models");
-
-    // Clicking the model selector opens a model list for the active provider.
-    modelBtn.click();
-    await el.updateComplete;
-    const modelItems = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
-    expect(modelItems).toHaveLength(2);
-    expect(modelItems[0].textContent).toContain("vicuna-13b");
-
-    // The tools toggle is the only `.composer-tool` that carries an SVG icon
-    // (the add-content button is a text glyph), so select it via that.
-    const toolsBtn = el
-      .shadowRoot!.querySelector(".composer-tool svg")
-      ?.closest("button") as HTMLElement;
-    // The tools button shows no floating count badge.
-    expect(toolsBtn.querySelector(".tool-badge")).toBeNull();
-  });
-
-  it("selecting a provider dispatches chat:provider-change and closes the dropdown", async () => {
-    const el = document.createElement("agents-chat") as unknown as AgentsChat;
-    document.body.appendChild(el);
-    await el.updateComplete;
-
-    el.setComposerContext({
-      providers: [
-        { id: "vllm", label: "vLLM", defaultModel: "vicuna-13b" },
-        { id: "openai", label: "OpenAI", defaultModel: "gpt-4" },
-      ],
-      activeProviderId: "vllm",
-    });
-    await el.updateComplete;
-
-    const providerBtn = el.shadowRoot!.querySelector(".composer-select") as HTMLButtonElement;
-    providerBtn.click();
-    await el.updateComplete;
-    expect(el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item")).toHaveLength(
-      2,
-    );
+    expect(items[0].classList.contains("active")).toBe(true);
 
     const handler = vi.fn();
     el.addEventListener("chat:provider-change", handler as EventListener);
-
-    const other = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item")[1];
-    (other as HTMLElement).click();
+    items[1].click();
     await el.updateComplete;
-
-    expect(handler).toHaveBeenCalledOnce();
     expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
       providerId: "openai",
       modelId: "gpt-4",
     });
-    // The dropdown stays open (like the tools multi-select); it closes only
-    // when the user clicks outside the composer.
-    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
-    expect(providerBtn.querySelector(".composer-select-label")?.textContent).toContain("OpenAI");
-    // The selector buttons are plain buttons (no border/background by default).
-    expect(providerBtn.tagName).toBe("BUTTON");
+    expect(settings(el)).not.toBeNull();
+    expect(q(el, ".composer-model-label")!.textContent!.trim()).toBe("OpenAI / gpt-4");
   });
 
-  it("hides the thinking selector and sends nothing when the model has no thinking entries", async () => {
-    const el = document.createElement("agents-chat") as unknown as AgentsChat;
-    document.body.appendChild(el);
-    await el.updateComplete;
+  it("picks a model in the settings, and then its reasoning effort", async () => {
+    const el = await chatWithContext();
+    await openSettings(el);
+    const models = [...section(el, "Model")!.querySelectorAll<HTMLElement>(".provider-item")];
+    expect(models.map((m) => m.querySelector(".row-name")!.textContent)).toEqual([
+      "vicuna-13b",
+      "qwen-25",
+    ]);
 
-    el.setComposerContext({
-      providers: [{ id: "vllm", label: "vLLM", defaultModel: "m1" }],
-      activeProviderId: "vllm",
+    const modelChange = vi.fn();
+    el.addEventListener("chat:model-change", modelChange as EventListener);
+    models[1].click();
+    await el.updateComplete;
+    expect((modelChange.mock.calls[0][0] as CustomEvent).detail).toEqual({ modelId: "qwen-25" });
+    expect(q(el, ".composer-model-label")!.textContent!.trim()).toBe("vLLM / qwen-25");
+
+    // qwen-25 has thinking entries: the Reasoning effort section appears,
+    // listing only them, the first chosen.
+    const efforts = [
+      ...section(el, "Reasoning effort")!.querySelectorAll<HTMLElement>(".provider-item"),
+    ];
+    expect(efforts.map((e) => e.querySelector(".row-name")!.textContent)).toEqual([
+      "Light",
+      "Deep",
+    ]);
+    expect(efforts[0].classList.contains("active")).toBe(true);
+
+    const thinkingChange = vi.fn();
+    el.addEventListener("chat:thinking-change", thinkingChange as EventListener);
+    efforts[1].click();
+    await el.updateComplete;
+    expect((thinkingChange.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      thinkingKey: "Deep",
     });
-    await el.updateComplete;
+    expect(settings(el)).not.toBeNull();
 
-    // No thinking selector in the toolbar.
-    expect(el.shadowRoot!.querySelector(".composer-thinking-select")).toBeNull();
-
-    const handler = vi.fn();
-    el.addEventListener("chat:send", handler as EventListener);
-    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
-    (inputEl as { value: string }).value = "hi";
+    // Sending includes the chosen effort's value.
+    const send = vi.fn();
+    el.addEventListener("chat:send", send as EventListener);
+    const inputEl = q(el, ".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "hi";
     inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await el.updateComplete;
-    (el.shadowRoot!.querySelector(".composer-send") as HTMLElement).click();
-
-    // No thinkingLevel is sent.
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ text: "hi" });
-  });
-
-  it("shows only the model's thinking entries and keeps the menu open on select", async () => {
-    const el = document.createElement("agents-chat") as unknown as AgentsChat;
-    document.body.appendChild(el);
-    await el.updateComplete;
-
-    el.setComposerContext({
-      providers: [
-        {
-          id: "vllm",
-          label: "vLLM",
-          defaultModel: "m1",
-          models: [{ id: "m1", thinking: { Light: "low", Deep: "high" }, contextWindow: 128000 }],
-        },
-      ],
-      activeProviderId: "vllm",
-    });
-    await el.updateComplete;
-
-    const thinkingBtn = el.shadowRoot!.querySelector(
-      ".composer-thinking-select",
-    ) as HTMLButtonElement;
-    expect(thinkingBtn).not.toBeNull();
-    // First entry is shown by default.
-    expect(thinkingBtn.querySelector(".composer-select-label")?.textContent).toBe("Light");
-
-    // Only the model's entries are listed.
-    thinkingBtn.click();
-    await el.updateComplete;
-    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
-    expect(items).toHaveLength(2);
-    expect(items[0].textContent).toContain("Light");
-    expect(items[1].textContent).toContain("Deep");
-
-    const handler = vi.fn();
-    el.addEventListener("chat:thinking-change", handler as EventListener);
-    // Selecting an entry updates the button and keeps the menu open.
-    (items[1] as HTMLElement).click();
-    await el.updateComplete;
-    expect(handler).toHaveBeenCalledOnce();
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ thinkingKey: "Deep" });
-    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
-    expect(thinkingBtn.querySelector(".composer-select-label")?.textContent).toBe("Deep");
-
-    // Sending includes the selected entry's value.
-    const sendHandler = vi.fn();
-    el.addEventListener("chat:send", sendHandler as EventListener);
-    const inputEl = el.shadowRoot!.querySelector(".chat-input") as HTMLTextAreaElement;
-    (inputEl as { value: string }).value = "hi";
-    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-    await el.updateComplete;
-    (el.shadowRoot!.querySelector(".composer-send") as HTMLElement).click();
-    expect((sendHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    q(el, ".composer-send")!.click();
+    expect((send.mock.calls[0][0] as CustomEvent).detail).toEqual({
       text: "hi",
       thinkingLevel: "high",
     });
+  });
+
+  it("sends no thinkingLevel when the model has no thinking entries", async () => {
+    const el = await chatWithContext();
+    const send = vi.fn();
+    el.addEventListener("chat:send", send as EventListener);
+    const inputEl = q(el, ".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "hi";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    await el.updateComplete;
+    q(el, ".composer-send")!.click();
+    expect((send.mock.calls[0][0] as CustomEvent).detail).toEqual({ text: "hi" });
   });
 
   it("omits thinkingLevel when the selected entry's value is null (off)", async () => {
@@ -1565,92 +1593,95 @@ describe("AgentsChat (custom element)", () => {
     expect((sendHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({ text: "hi" });
   });
 
-  it("selecting a model dispatches chat:model-change and updates the model label", async () => {
+  it("sends a level whose value is request fields as they are, and shows them", async () => {
     const el = document.createElement("agents-chat") as unknown as AgentsChat;
     document.body.appendChild(el);
     await el.updateComplete;
-
+    const off = { chat_template_kwargs: { thinking: false } };
     el.setComposerContext({
       providers: [
         {
           id: "vllm",
           label: "vLLM",
-          defaultModel: "vicuna-13b",
-          models: [{ id: "vicuna-13b" }, { id: "qwen-25" }],
+          defaultModel: "m1",
+          models: [{ id: "m1", thinking: { Off: off, High: "high" } }],
         },
       ],
       activeProviderId: "vllm",
-      activeModelId: "vicuna-13b",
     });
     await el.updateComplete;
 
-    const modelBtn = el.shadowRoot!.querySelector(
-      ".composer-select.composer-model-select",
-    ) as HTMLButtonElement;
-    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("vicuna-13b");
+    await openSettings(el);
+    const efforts = [
+      ...section(el, "Reasoning effort")!.querySelectorAll<HTMLElement>(".provider-item"),
+    ];
+    expect(efforts.map((e) => e.querySelector(".row-sub")?.textContent)).toEqual([
+      '{"chat_template_kwargs":{"thinking":false}}',
+      "high",
+    ]);
 
-    const handler = vi.fn();
-    el.addEventListener("chat:model-change", handler as EventListener);
-
-    modelBtn.click();
+    const send = vi.fn();
+    el.addEventListener("chat:send", send as EventListener);
+    const inputEl = q(el, ".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "hi";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await el.updateComplete;
-    const items = el.shadowRoot!.querySelectorAll(".composer-provider-menu .provider-item");
-    expect(items).toHaveLength(2);
-
-    (items[1] as HTMLElement).click();
-    await el.updateComplete;
-
-    expect(handler).toHaveBeenCalledOnce();
-    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ modelId: "qwen-25" });
-    expect(modelBtn.querySelector(".composer-select-label")?.textContent).toContain("qwen-25");
-    // The model dropdown stays open (closes only on outside click).
-    expect(el.shadowRoot!.querySelector(".composer-provider-menu")).not.toBeNull();
+    q(el, ".composer-send")!.click();
+    expect((send.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      text: "hi",
+      thinkingLevel: off,
+    });
   });
 
-  it("tools multi-select lists all tools, toggles them, and keeps the menu open", async () => {
-    const el = document.createElement("agents-chat") as unknown as AgentsChat;
-    document.body.appendChild(el);
-    await el.updateComplete;
+  it("says the user is working in the chat on typing and on each settings pick", async () => {
+    const el = await chatWithContext();
+    const engage = vi.fn();
+    el.addEventListener("chat:engage", engage as EventListener);
 
-    el.setComposerContext({
-      availableTools: [
-        { name: "read_file", description: "Read a file." },
-        { name: "search_files", description: "Search files." },
-        { name: "run_command", description: "Run a command." },
-      ],
-      activeTools: ["read_file", "run_command"],
-    });
+    // Opening and closing the settings alone is not working in the chat.
+    await openSettings(el);
+    q(el, ".cs-close")!.click();
     await el.updateComplete;
+    expect(engage).not.toHaveBeenCalled();
 
-    // The tools toggle is the only `.composer-tool` that carries an SVG icon.
-    const toolsBtn = el
-      .shadowRoot!.querySelector(".composer-tool svg")
-      ?.closest("button") as HTMLButtonElement;
-    toolsBtn.click();
-    await el.updateComplete;
+    const inputEl = q(el, ".chat-input") as HTMLTextAreaElement;
+    inputEl.value = "h";
+    inputEl.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    expect(engage).toHaveBeenCalledTimes(1);
 
-    const items = el.shadowRoot!.querySelectorAll(".composer-tools-menu .tool-item");
+    await openSettings(el);
+    const pick = async (heading: string, sel: string, i: number) => {
+      section(el, heading)!.querySelectorAll<HTMLElement>(sel)[i].click();
+      await el.updateComplete;
+    };
+    await pick("Model", ".provider-item", 1);
+    expect(engage).toHaveBeenCalledTimes(2);
+    await pick("Reasoning effort", ".provider-item", 1);
+    expect(engage).toHaveBeenCalledTimes(3);
+    await pick("Tools", ".tool-item", 1);
+    expect(engage).toHaveBeenCalledTimes(4);
+    await pick("Provider", ".provider-item", 1);
+    expect(engage).toHaveBeenCalledTimes(5);
+  });
+
+  it("toggles tools in the settings, which stay open", async () => {
+    const el = await chatWithContext();
+    await openSettings(el);
+    const items = [...section(el, "Tools")!.querySelectorAll<HTMLElement>(".tool-item")];
     expect(items).toHaveLength(3);
-    expect((items[0] as HTMLElement).classList.contains("active")).toBe(true);
-    expect((items[1] as HTMLElement).classList.contains("active")).toBe(false);
-    // Two-row layout: name row + description row, checkbox icon present.
+    expect(items.map((i) => i.classList.contains("active"))).toEqual([true, false, true]);
     expect(items[0].querySelector(".tool-name")?.textContent).toBe("read_file");
     expect(items[0].querySelector(".tool-desc")?.textContent).toBe("Read a file.");
     expect(items[0].querySelector(".tool-check svg")).toBeTruthy();
-    expect(items[1].querySelector(".tool-check svg")).toBeTruthy();
 
     const handler = vi.fn();
     el.addEventListener("chat:tools-change", handler as EventListener);
-
-    // Toggling the middle (disabled) tool enables it and leaves the menu open.
-    (items[1] as HTMLElement).click();
+    items[1].click();
     await el.updateComplete;
-
-    expect(handler).toHaveBeenCalledOnce();
     expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({
       tools: ["read_file", "run_command", "search_files"],
     });
-    expect(el.shadowRoot!.querySelector(".composer-tools-menu")).toBeTruthy();
+    expect(settings(el)).not.toBeNull();
   });
 
   it("sends on Enter (without Shift) and does not send on Shift+Enter", async () => {

@@ -152,6 +152,20 @@ describe("mountRendererSurface", () => {
     expect(() => instance.host.openLog("e-1")).not.toThrow();
   });
 
+  it("pins its tab through the injected platform action", () => {
+    const container = document.createElement("div");
+    const pin = vi.fn();
+    const instance = mountRendererSurface(counterSpec(), container, makeDeps({ pin }));
+    instance.host.pin();
+    expect(pin).toHaveBeenCalledTimes(1);
+  });
+
+  it("pin is inert without the platform action (a sidebar surface)", () => {
+    const container = document.createElement("div");
+    const instance = mountRendererSurface(counterSpec(), container, makeDeps());
+    expect(() => instance.host.pin()).not.toThrow();
+  });
+
   it("dispatches openTab to the injected platform action", () => {
     const container = document.createElement("div");
     const openTab = vi.fn();

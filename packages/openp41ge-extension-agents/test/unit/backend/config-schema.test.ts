@@ -23,6 +23,12 @@ describe("the agents config schema", () => {
     expect(props(provider).apiKey.secret).toBe(true);
   });
 
+  it("a thinking level is a reasoning_effort string, null, or an object of request fields", () => {
+    const model = props(provider).models.items as ConfigSchema;
+    const level = props(model).thinking.additionalProperties as ConfigSchema;
+    expect(level.type).toEqual(["string", "null", "object"]);
+  });
+
   it("every setting has a title", () => {
     const untitled: string[] = [];
     const walk = (s: ConfigSchema, at: string) => {

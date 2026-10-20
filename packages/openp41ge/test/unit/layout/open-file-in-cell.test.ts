@@ -7,6 +7,8 @@
  *  - Opening pinned promotes an existing preview of that file.
  *  - `insertAt` places the tab at a tab-bar position (drop on the tab bar);
  *    an existing tab for the file moves there.
+ *  - An extension tab opened with a key (`OpenTabRequest.key`, kept as its
+ *    `filePath`) follows the same rule: opening the key again activates it.
  */
 import { describe, test, expect } from "vitest";
 import * as types from "@openp41ge/layout/types";
@@ -195,5 +197,28 @@ describe("no-duplicate rule applies to files and identity-keyed tabs only", () =
       (id) => ws.editorTabs[id as string]?.appType === "git-repository",
     );
     expect(gitTabs).toHaveLength(2);
+  });
+});
+
+describe("actionOpenFile — an extension tab's key", () => {
+  const CHAT = "ext:x:chat";
+
+  test("opening a key as a preview activates its pinned tab instead of adding a preview", () => {
+    let { ws, winId } = seeded();
+    ws = ops.actionOpenFile(ws, winId, CHAT, "Agent", "c1", 0, true, { chatId: "c1" });
+    const chat = tabsFor(ws, "c1")[0];
+    ws = ops.actionOpenFile(ws, winId, "file-viewer", "a.ts", "/a.ts", 0, true);
+    ws = ops.actionOpenFile(ws, winId, CHAT, "Agent", "c1", 0, false, { chatId: "c1" });
+    expect(tabsFor(ws, "c1")).toEqual([chat]);
+    expect(cell(ws).activeTabId).toBe(chat);
+    expect(ws.editorTabs[chat as string].isPreview).toBe(false);
+  });
+
+  test("a different key still opens its own tab", () => {
+    let { ws, winId } = seeded();
+    ws = ops.actionOpenFile(ws, winId, CHAT, "Agent", "c1", 0, true, { chatId: "c1" });
+    ws = ops.actionOpenFile(ws, winId, CHAT, "Agent", "c2", 0, true, { chatId: "c2" });
+    expect(tabsFor(ws, "c1")).toHaveLength(1);
+    expect(tabsFor(ws, "c2")).toHaveLength(1);
   });
 });

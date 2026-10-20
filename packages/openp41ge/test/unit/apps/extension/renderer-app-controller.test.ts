@@ -1,6 +1,8 @@
 /**
  * An extension grid cell's `host.openTab` tells the platform which tab is
- * asking, so `placement: "next-column"` can open to the right of it.
+ * asking, so `placement: "next-column"` can open to the right of it; its
+ * `host.pin()` pins that tab, as an edit pins a file editor's preview
+ * (`grid-pin`).
  */
 import { describe, it, expect, vi } from "vitest";
 import { html } from "lit";
@@ -33,5 +35,37 @@ describe("RendererAppController", () => {
     captured?.openTab(request);
     expect(openTab).toHaveBeenCalledWith(request, { tabId: "tab-7" });
     ctrl.unmount();
+  });
+
+  it("pins its tab with grid-pin, as an edit pins a file editor's preview", () => {
+    (window as unknown as { openp41ge: unknown }).openp41ge = {
+      workspace: { getWindowId: () => "win-1" },
+    };
+    let captured: SurfaceHost | undefined;
+    const spec: GridSurfaceSpec = {
+      kind: "grid",
+      id: "cell",
+      title: "Cell",
+      render: (host) => {
+        captured = host;
+        return html`<p></p>`;
+      },
+    };
+    const ctrl = new RendererAppController("tab-7", "ext:x:cell", spec, {
+      log: { error: vi.fn(), info: vi.fn(), debug: vi.fn(), warn: vi.fn() } as unknown as ILogger,
+      openTab: vi.fn(),
+    });
+    const outer = document.createElement("div");
+    const el = document.createElement("div");
+    outer.append(el);
+    document.body.append(outer);
+    ctrl.mount(el);
+
+    const pins: unknown[] = [];
+    outer.addEventListener("grid-pin", (e) => pins.push((e as CustomEvent).detail));
+    captured?.pin();
+    expect(pins).toEqual([{ winId: "win-1", tabId: "tab-7", pinned: true }]);
+    ctrl.unmount();
+    outer.remove();
   });
 });

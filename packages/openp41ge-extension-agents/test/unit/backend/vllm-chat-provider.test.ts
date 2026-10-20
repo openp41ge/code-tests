@@ -257,6 +257,43 @@ describe("VllmChatProvider.streamChat", () => {
     expect(body.reasoning_effort).toBe("mine");
   });
 
+  it("adds an object thinking level's fields to the request, as written", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      sseResponse("data: [DONE]\n\n"),
+    );
+    const provider = new VllmChatProvider(config);
+    await collect(
+      provider.streamChat({
+        messages: [],
+        thinking: { chat_template_kwargs: { thinking: false }, temperature: 0.2 },
+      }),
+    );
+
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.chat_template_kwargs).toEqual({ thinking: false });
+    expect(body.temperature).toBe(0.2);
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it("never lets an object thinking level replace the request's own fields", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      sseResponse("data: [DONE]\n\n"),
+    );
+    const provider = new VllmChatProvider(config);
+    await collect(
+      provider.streamChat({
+        messages: [{ id: "u", role: "user", content: "hi", timestamp: 0 }],
+        thinking: { model: "other", messages: [], stream: false, reasoning_effort: "high" },
+      }),
+    );
+
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.model).toBe("qwen");
+    expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(body.stream).toBe(true);
+    expect(body.reasoning_effort).toBe("high");
+  });
+
   it("omits reasoning_effort when the thinking level is off/empty/none", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       sseResponse("data: [DONE]\n\n"),

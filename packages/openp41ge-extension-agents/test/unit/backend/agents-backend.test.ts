@@ -195,6 +195,25 @@ describe("AgentsBackend agent run", () => {
     expect(send.mock.calls[0][4]).toEqual(["read_file"]);
   });
 
+  it("passes the thinking level on, a string or an object of request fields", async () => {
+    const { id } = (await run("create")) as { id: string };
+    await run("open", { id });
+    const send = vi.spyOn(
+      (
+        backend as unknown as { _runtimeFor(): { send: (...a: unknown[]) => Promise<void> } }
+      )._runtimeFor(),
+      "send",
+    );
+    send.mockResolvedValue();
+    await run("send", { id, text: "hi", thinkingLevel: "high" });
+    expect(send.mock.calls[0][5]).toBe("high");
+    const fields = { chat_template_kwargs: { thinking: false } };
+    await run("send", { id, text: "hi", thinkingLevel: fields });
+    expect(send.mock.calls[1][5]).toEqual(fields);
+    await run("send", { id, text: "hi", thinkingLevel: ["no"] });
+    expect(send.mock.calls[2][5]).toBeUndefined();
+  });
+
   it("shows the agent the workspace's repositories, and checks out worktrees in it", async () => {
     const systems: string[] = [];
     let call = 0;
